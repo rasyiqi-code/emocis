@@ -70,10 +70,12 @@ __export(exports_extension, {
 });
 module.exports = __toCommonJS(exports_extension);
 var vscode5 = __toESM(require("vscode"));
+var path2 = __toESM(require("path"));
+var fs2 = __toESM(require("fs"));
 
 // src/mcpClient.ts
 var import_child_process = require("child_process");
-var path2 = __toESM(require("path"));
+var path = __toESM(require("path"));
 var fs = __toESM(require("fs"));
 
 class EmocisClient {
@@ -88,9 +90,9 @@ class EmocisClient {
   }
   initProcess() {
     const homeDir = process.env.HOME || "";
-    const cargoBinary = path2.join(homeDir, ".cargo", "bin", "emocis");
-    const localTargetBinary = path2.join(this.workspaceRoot, "target", "debug", "emocis");
-    const releaseTargetBinary = path2.join(this.workspaceRoot, "target", "release", "emocis");
+    const cargoBinary = path.join(homeDir, ".cargo", "bin", "emocis");
+    const localTargetBinary = path.join(this.workspaceRoot, "target", "debug", "emocis");
+    const releaseTargetBinary = path.join(this.workspaceRoot, "target", "release", "emocis");
     const emocisWorkspaceBinary = "/media/rasyiqi/7653717A1C07B131/EMOCIS/target/release/emocis";
     const emocisWorkspaceDebugBinary = "/media/rasyiqi/7653717A1C07B131/EMOCIS/target/debug/emocis";
     let executable = "emocis";
@@ -107,12 +109,12 @@ class EmocisClient {
       executable = emocisWorkspaceDebugBinary;
     } else {
       const bunCandidates = [
-        path2.join(homeDir, ".bun", "bin", "bun"),
+        path.join(homeDir, ".bun", "bin", "bun"),
         "/usr/local/bin/bun",
         "/usr/bin/bun"
       ];
       const bunBin = bunCandidates.find((b) => fs.existsSync(b)) || "bun";
-      const mcpScript = path2.join(this.workspaceRoot, "bin", "mcp.js");
+      const mcpScript = path.join(this.workspaceRoot, "bin", "mcp.js");
       if (fs.existsSync(mcpScript)) {
         executable = bunBin;
         args = [mcpScript];
@@ -291,15 +293,29 @@ class MemoryItem extends vscode.TreeItem {
 ${data.content}
 
 Tags: ${data.tags.join(", ")}`;
-      this.description = data.affects.join(", ");
-      const file = data.evidence?.[0]?.file || data.affects?.[0];
-      const startLine = data.evidence?.[0]?.start_line ?? 1;
+      let file;
+      let startLine = 1;
+      if (data.evidence && data.evidence.length > 0) {
+        for (const ev of data.evidence) {
+          if (ev.file) {
+            file = ev.file;
+            startLine = ev.start_line ?? 1;
+            break;
+          }
+        }
+      }
+      if (!file && data.affects && data.affects.length > 0) {
+        file = data.affects[0];
+      }
       if (file) {
+        this.description = `${file}:${startLine}`;
         this.command = {
           command: "emocis.openLocation",
           title: "Open Location",
           arguments: [file, startLine]
         };
+      } else {
+        this.description = data.affects.join(", ");
       }
       switch (data.knowledge_type?.toLowerCase()) {
         case "decision":
@@ -848,14 +864,34 @@ function activate(context) {
   }));
   context.subscriptions.push(vscode5.commands.registerCommand("emocis.openLocation", async (file, line = 1) => {
     try {
-      const fullPath = path.isAbsolute(file) ? file : path.resolve(workspaceRoot, file);
+      outputChannel.appendLine(`[EMOCIS] Navigating to: ${file}:${line}`);
+      let fullPath = file;
+      if (!path2.isAbsolute(file)) {
+        const folders = vscode5.workspace.workspaceFolders || [];
+        for (const folder of folders) {
+          const candidate = path2.join(folder.uri.fsPath, file);
+          if (fs2.existsSync(candidate)) {
+            fullPath = candidate;
+            break;
+          }
+        }
+        if (!path2.isAbsolute(fullPath)) {
+          fullPath = path2.resolve(workspaceRoot, file);
+        }
+      }
       const docUri = vscode5.Uri.file(fullPath);
       const doc = await vscode5.workspace.openTextDocument(docUri);
-      const editor = await vscode5.window.showTextDocument(doc, { preview: false });
       const targetLine = Math.max(0, (line || 1) - 1);
-      const range = new vscode5.Range(targetLine, 0, targetLine, 0);
-      editor.selection = new vscode5.Selection(range.start, range.end);
+      const pos = new vscode5.Position(targetLine, 0);
+      const range = new vscode5.Range(pos, pos);
+      const editor = await vscode5.window.showTextDocument(doc, {
+        preview: false,
+        selection: range,
+        viewColumn: vscode5.ViewColumn.One
+      });
+      editor.selection = new vscode5.Selection(pos, pos);
       editor.revealRange(range, vscode5.TextEditorRevealType.InCenter);
+      outputChannel.appendLine(`[EMOCIS] Successfully opened and centered at ${fullPath}:${targetLine + 1}`);
     } catch (err) {
       outputChannel.appendLine(`[EMOCIS] Failed to open ${file}:${line} - ${err}`);
     }

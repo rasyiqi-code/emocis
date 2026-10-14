@@ -33,17 +33,31 @@ export class MemoryItem extends vscode.TreeItem {
 
     if (data) {
       this.tooltip = `${data.title}\n\n${data.content}\n\nTags: ${data.tags.join(", ")}`;
-      this.description = data.affects.join(", ");
-      
-      const file = data.evidence?.[0]?.file || data.affects?.[0];
-      const startLine = data.evidence?.[0]?.start_line ?? 1;
+      let file: string | undefined;
+      let startLine = 1;
+
+      if (data.evidence && data.evidence.length > 0) {
+        for (const ev of data.evidence) {
+          if (ev.file) {
+            file = ev.file;
+            startLine = ev.start_line ?? 1;
+            break;
+          }
+        }
+      }
+      if (!file && data.affects && data.affects.length > 0) {
+        file = data.affects[0];
+      }
 
       if (file) {
+        this.description = `${file}:${startLine}`;
         this.command = {
           command: "emocis.openLocation",
           title: "Open Location",
           arguments: [file, startLine]
         };
+      } else {
+        this.description = data.affects.join(", ");
       }
 
       switch (data.knowledge_type?.toLowerCase()) {

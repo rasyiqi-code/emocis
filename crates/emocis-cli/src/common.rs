@@ -44,7 +44,14 @@ pub fn index_directory(root_path: &Path, project_id: &str) -> anyhow::Result<(us
     let mut total_nodes = 0;
     let mut total_knowledge = 0;
 
-    store.execute_batch("BEGIN TRANSACTION;")?;
+    store.execute_batch(&format!(
+        "BEGIN TRANSACTION;
+         DELETE FROM evidence WHERE target_type = 'knowledge';
+         DELETE FROM knowledge_items WHERE project_id = '{pid}';
+         DELETE FROM edges;
+         DELETE FROM nodes WHERE project_id = '{pid}';",
+        pid = project_id
+    ))?;
 
     let index_res = index_dir_recursive(
         root_path,

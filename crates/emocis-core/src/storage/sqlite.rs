@@ -487,6 +487,12 @@ impl SqliteStore {
             ],
         )?;
 
+        // Clean up previous evidence for this item
+        self.conn.execute(
+            "DELETE FROM evidence WHERE target_type = 'knowledge' AND target_id = ?1",
+            params![item.id],
+        )?;
+
         // Insert evidence
         for ev in &item.evidence {
             self.conn.execute(
