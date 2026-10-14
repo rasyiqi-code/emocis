@@ -1,8 +1,6 @@
-mod common;
-
 use clap::{Parser, Subcommand};
 use colored::*;
-use common::open_or_init_store;
+use emocis_cli::common::open_or_init_store;
 use emocis_cclg::GraphAnalyzer;
 
 #[derive(Parser)]

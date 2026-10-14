@@ -1,8 +1,6 @@
-mod common;
-
 use clap::{Parser, Subcommand};
 use colored::*;
-use common::{index_directory, open_or_init_store};
+use emocis_cli::common::{index_directory, open_or_init_store};
 use emocis_memory::MemoryEngine;
 use std::env;
 

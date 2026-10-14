@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use emocis_cclg::{LanguageAdapter, TypeScriptAdapter};
