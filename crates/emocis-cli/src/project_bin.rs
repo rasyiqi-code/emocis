@@ -1,7 +1,10 @@
 use clap::{Parser, Subcommand};
 use colored::*;
 use emocis_cli::common::{index_directory, open_or_init_store};
-use emocis_memory::{ContextCompressor, DriftDetector, HealthScorer, MemoryEngine};
+use emocis_memory::{
+    ContextCompressor, DriftDetector, DuplicationDetector, FailedAttemptsManager, HealthScorer,
+    MemoryEngine, RefactoringRadar,
+};
 use std::env;
 
 #[derive(Parser)]
@@ -47,6 +50,31 @@ enum Commands {
 
     /// Menjalankan audit deteksi drift arsitektur dan dokumentasi usang
     Audit,
+
+    /// Refactoring Radar: Analisis pembengkakan file (file bloat) dan rekomendasi pemecahan modul
+    Refactor {
+        /// File target (opsional, jika kosong memindai seluruh proyek)
+        file: Option<String>,
+    },
+
+    /// Mengelola memori kegagalan masa lalu (Failed Attempts) agar tidak diulangi developer / AI
+    Failed {
+        /// Pendekatan yang pernah dicoba (misal: "Redis-based distributed lock")
+        #[arg(long)]
+        approach: Option<String>,
+        /// Alasan penolakan / kegagalan
+        #[arg(long)]
+        reason: Option<String>,
+        /// Solusi pengganti yang berhasil
+        #[arg(long)]
+        replaced_by: Option<String>,
+        /// Provenance (PR atau commit id)
+        #[arg(long)]
+        provenance: Option<String>,
+    },
+
+    /// Mendeteksi duplikasi logika semantik (Level 1-3) antar modul
+    Duplication,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -243,6 +271,119 @@ fn main() -> anyhow::Result<()> {
                     println!("    Lokasi: {}", loc_str.cyan());
                     println!("    Detail: {}", v.description);
                     println!("    Saran : {}", v.recommendation.green());
+                }
+            }
+            println!();
+        }
+        Commands::Refactor { file } => {
+            let store = open_or_init_store()?;
+            let radar = RefactoringRadar::new(&store);
+
+            println!("\n{}", "==================================================".magenta());
+            println!("{}", "           REFACTORING RADAR (PRD Bab 28)         ".bold().magenta());
+            println!("{}\n", "==================================================".magenta());
+
+            match file {
+                Some(target_file) => {
+                    let content = std::fs::read_to_string(&target_file)
+                        .map_err(|e| anyhow::anyhow!("Gagal membaca file '{}': {}", target_file, e))?;
+                    let diag = radar.diagnose_file(&target_file, &content)?;
+
+                    println!("Target File: {}", diag.file_path.bold().yellow());
+                    println!("  • Lines of Code (LOC)       : {}", diag.loc.to_string().cyan());
+                    println!("  • Jumlah Fungsi             : {}", diag.function_count.to_string().cyan());
+                    println!("  • Estimasi Percabangan/CFG  : {}", diag.cyclomatic_complexity_est.to_string().cyan());
+                    println!("  • Klaster Konsep Terdeteksi : {} klaster leksikal", diag.distinct_conceptual_clusters.to_string().cyan());
+                    for d in &diag.top_concept_clusters {
+                        println!("    - {}", d);
+                    }
+                    println!("  • Incoming Dependents       : {}", diag.incoming_dependents_count);
+                    println!("  • Outgoing Calls            : {}", diag.outgoing_calls_count);
+                    println!("  • Severity                  : {}", diag.severity.bold().red());
+                    println!("\n  💡 {}", "REKOMENDASI:".bold().green());
+                    println!("  {}", diag.recommendation);
+                }
+                None => {
+                    println!("{}", "Memindai seluruh repositori untuk indikasi File Bloat...".cyan());
+                    let candidates = radar.scan_bloat_candidates()?;
+                    if candidates.is_empty() {
+                        println!("{}", "✔ Tidak ada file bloat terdeteksi di repositori.".green());
+                    } else {
+                        for c in candidates {
+                            println!("\n• {} ({} LOC, {} fungsi) - [{}]", c.file_path.bold(), c.loc, c.function_count, c.severity.bold().red());
+                            println!("  Klaster Konsep: {}", c.top_concept_clusters.join(", "));
+                            println!("  Saran : {}", c.recommendation.dimmed());
+                        }
+                    }
+                }
+            }
+            println!();
+        }
+        Commands::Failed { approach, reason, replaced_by, provenance } => {
+            let cwd = env::current_dir()?;
+            let project_name = cwd
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("project");
+
+            let store = open_or_init_store()?;
+            let manager = FailedAttemptsManager::new(&store);
+
+            println!("\n{}", "==================================================".yellow());
+            println!("{}", "       FAILED ATTEMPTS MEMORY (PRD Bab 13)        ".bold().yellow());
+            println!("{}\n", "==================================================".yellow());
+
+            match (approach, reason, replaced_by, provenance) {
+                (Some(app), Some(rsn), Some(repl), Some(prov)) => {
+                    let id = manager.record_failure(project_name, &app, &rsn, &repl, &prov, vec![])?;
+                    println!("{}", "✔ Berhasil mencatat eksperimen yang gagal!".bold().green());
+                    println!("  ID       : {}", id.cyan());
+                    println!("  Pendekatan: {}", app.bold());
+                    println!("  Alasan   : {}", rsn);
+                    println!("  Solusi   : {}", repl.green());
+                    println!("  Bukti    : {}", prov);
+                    println!("\nEngineer lain dan AI Coding Agent kini tidak akan mengulangi kesalahan yang sama.");
+                }
+                _ => {
+                    let failures = manager.list_failures(project_name)?;
+                    if failures.is_empty() {
+                        println!("{}", "(Belum ada catatan eksperimen gagal yang terekam)".dimmed());
+                        println!("\nUntuk mencatat pendekatan yang gagal gunakan:");
+                        println!("  $ project failed --approach \"<PENDEKATAN>\" --reason \"<ALASAN>\" --replaced-by \"<SOLUSI>\" --provenance \"<PR/COMMIT>\"");
+                    } else {
+                        for (idx, f) in failures.iter().enumerate() {
+                            println!("[{}] {}", idx + 1, f.approach.bold().red());
+                            println!("    Detail: {}", f.reason_rejected);
+                            if !f.provenance_source.is_empty() {
+                                println!("    Bukti : {}", f.provenance_source.cyan());
+                            }
+                            println!();
+                        }
+                    }
+                }
+            }
+            println!();
+        }
+        Commands::Duplication => {
+            let store = open_or_init_store()?;
+            let detector = DuplicationDetector::new(&store);
+            let results = detector.scan_duplications()?;
+
+            println!("\n{}", "==================================================".cyan());
+            println!("{}", "       SEMANTIC DUPLICATION RADAR (PRD Bab 10)    ".bold().cyan());
+            println!("{}\n", "==================================================".cyan());
+
+            if results.is_empty() {
+                println!("{}", "✔ Tidak ada duplikasi semantik tingkat tinggi yang terdeteksi.".green());
+            } else {
+                println!("{}", format!("Ditemukan {} pasangan fungsi dengan tanggung jawab ganda:", results.len()).yellow());
+                for (idx, d) in results.iter().enumerate() {
+                    println!("\n[{}] {} <───> {}", idx + 1, d.function_a.bold().yellow(), d.function_b.bold().yellow());
+                    println!("    Lokasi A  : {}", d.location_a.dimmed());
+                    println!("    Lokasi B  : {}", d.location_b.dimmed());
+                    println!("    Klasifikasi: {}", d.similarity_level.cyan());
+                    println!("    Tanggung Jawab: {}", d.shared_responsibility);
+                    println!("    Saran     : {}", d.recommendation.green());
                 }
             }
             println!();

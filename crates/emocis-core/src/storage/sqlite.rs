@@ -337,8 +337,7 @@ impl SqliteStore {
                     let raw_name = edge.qualifier.get("raw_callee")
                         .and_then(|v| v.as_str())
                         .unwrap_or_else(|| to_id.split(':').nth(3).unwrap_or(&to_id));
-                    let is_db = raw_name.to_lowercase().contains("database") || raw_name.to_lowercase().contains("repository");
-                    let kind = if is_db { NodeKind::Database } else { NodeKind::Function };
+                    let kind = if raw_name.contains('.') { NodeKind::Method } else { NodeKind::Function };
                     Node {
                         id: to_id.clone(),
                         kind,

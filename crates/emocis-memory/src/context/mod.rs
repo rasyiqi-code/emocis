@@ -7,6 +7,7 @@ pub struct MinimalContextPackage {
     pub active_constraints: Vec<String>,
     pub relevant_decisions: Vec<String>,
     pub warnings: Vec<String>,
+    pub failed_attempts: Vec<String>,
     pub affected_symbols: Vec<String>,
     pub token_estimate: usize,
     pub formatted_markdown: String,
@@ -28,6 +29,7 @@ impl<'a> ContextCompressor<'a> {
         let mut active_constraints = Vec::new();
         let mut relevant_decisions = Vec::new();
         let mut warnings = Vec::new();
+        let mut failed_attempts = Vec::new();
         let mut affected_symbols = Vec::new();
 
         for item in items {
@@ -40,6 +42,9 @@ impl<'a> ContextCompressor<'a> {
                 }
                 KnowledgeType::Warning => {
                     warnings.push(format!("{}: {}", item.title, item.content));
+                }
+                KnowledgeType::FailedAttempt => {
+                    failed_attempts.push(format!("{}: {}", item.title, item.content));
                 }
                 _ => {}
             }
@@ -84,6 +89,14 @@ impl<'a> ContextCompressor<'a> {
             md.push('\n');
         }
 
+        if !failed_attempts.is_empty() {
+            md.push_str("#### 🛑 KNOWN FAILED ATTEMPTS (DO NOT REPEAT):\n");
+            for f in &failed_attempts {
+                md.push_str(&format!("- ❌ **{}**\n", f));
+            }
+            md.push('\n');
+        }
+
         if !affected_symbols.is_empty() {
             md.push_str("#### 📦 RELEVANT CODE SYMBOLS:\n");
             for s in &affected_symbols {
@@ -99,6 +112,7 @@ impl<'a> ContextCompressor<'a> {
             active_constraints,
             relevant_decisions,
             warnings,
+            failed_attempts,
             affected_symbols,
             token_estimate,
             formatted_markdown: md,
