@@ -9,6 +9,8 @@ let emocisClient: EmocisClient | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+  const outputChannel = vscode.window.createOutputChannel("EMOCIS");
+  outputChannel.appendLine(`[EMOCIS] Extension activated for workspace: ${workspaceRoot}`);
 
   emocisClient = new EmocisClient(workspaceRoot);
 
@@ -17,6 +19,7 @@ export function activate(context: vscode.ExtensionContext) {
   const healthProvider = new HealthTreeProvider(emocisClient);
 
   context.subscriptions.push(
+    outputChannel,
     vscode.window.registerTreeDataProvider("emocis.memoryView", memoryProvider),
     vscode.window.registerTreeDataProvider("emocis.healthView", healthProvider)
   );

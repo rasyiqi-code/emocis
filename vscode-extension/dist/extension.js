@@ -760,10 +760,12 @@ class GraphVisualizerPanel {
 var emocisClient;
 function activate(context) {
   const workspaceRoot = vscode5.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+  const outputChannel = vscode5.window.createOutputChannel("EMOCIS");
+  outputChannel.appendLine(`[EMOCIS] Extension activated for workspace: ${workspaceRoot}`);
   emocisClient = new EmocisClient(workspaceRoot);
   const memoryProvider = new MemoryTreeProvider(emocisClient);
   const healthProvider = new HealthTreeProvider(emocisClient);
-  context.subscriptions.push(vscode5.window.registerTreeDataProvider("emocis.memoryView", memoryProvider), vscode5.window.registerTreeDataProvider("emocis.healthView", healthProvider));
+  context.subscriptions.push(outputChannel, vscode5.window.registerTreeDataProvider("emocis.memoryView", memoryProvider), vscode5.window.registerTreeDataProvider("emocis.healthView", healthProvider));
   const supportedLanguages = [
     { language: "typescript" },
     { language: "typescriptreact" },

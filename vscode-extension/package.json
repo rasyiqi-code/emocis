@@ -2,7 +2,7 @@
   "name": "emocis-vscode",
   "displayName": "EMOCIS — Codebase Intelligence & Engineering Memory",
   "description": "Interactive Logic Graph (CCLG), Architecture Drift Detection, and Engineering Memory System for VS Code & Cursor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "emocis",
   "repository": {
     "type": "git",
