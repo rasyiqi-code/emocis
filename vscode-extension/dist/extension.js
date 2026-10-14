@@ -1,10 +1,80 @@
+var __create = Object.create;
+var __getProtoOf = Object.getPrototypeOf;
+var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+function __accessProp(key) {
+  return this[key];
+}
+var __toESMCache_node;
+var __toESMCache_esm;
+var __toESM = (mod, isNodeMode, target) => {
+  var canCache = mod != null && typeof mod === "object";
+  if (canCache) {
+    var cache = isNodeMode ? __toESMCache_node ??= new WeakMap : __toESMCache_esm ??= new WeakMap;
+    var cached = cache.get(mod);
+    if (cached)
+      return cached;
+  }
+  target = mod != null ? __create(__getProtoOf(mod)) : {};
+  const to = isNodeMode || !mod || !mod.__esModule || !__hasOwnProp.call(mod, "default") ? __defProp(target, "default", { value: mod, enumerable: true }) : target;
+  if (mod && typeof mod === "object" || typeof mod === "function") {
+    for (let key of __getOwnPropNames(mod))
+      if (!__hasOwnProp.call(to, key))
+        __defProp(to, key, {
+          get: __accessProp.bind(mod, key),
+          enumerable: true
+        });
+  }
+  if (canCache)
+    cache.set(mod, to);
+  return to;
+};
+var __toCommonJS = (from) => {
+  var entry = (__moduleCache ??= new WeakMap).get(from), desc;
+  if (entry)
+    return entry;
+  entry = __defProp({}, "__esModule", { value: true });
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (var key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(entry, key))
+        __defProp(entry, key, {
+          get: __accessProp.bind(from, key),
+          enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable
+        });
+  }
+  __moduleCache.set(from, entry);
+  return entry;
+};
+var __moduleCache;
+var __returnValue = (v) => v;
+function __exportSetter(name, newValue) {
+  this[name] = __returnValue.bind(null, newValue);
+}
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, {
+      get: all[name],
+      enumerable: true,
+      configurable: true,
+      set: __exportSetter.bind(all, name)
+    });
+};
+
 // src/extension.ts
-import * as vscode5 from "vscode";
+var exports_extension = {};
+__export(exports_extension, {
+  activate: () => activate,
+  deactivate: () => deactivate
+});
+module.exports = __toCommonJS(exports_extension);
+var vscode5 = __toESM(require("vscode"));
 
 // src/mcpClient.ts
-import { spawn } from "child_process";
-import * as path from "path";
-import * as fs from "fs";
+var import_child_process = require("child_process");
+var path = __toESM(require("path"));
+var fs = __toESM(require("fs"));
 
 class EmocisClient {
   workspaceRoot;
@@ -54,7 +124,7 @@ class EmocisClient {
       RUST_LOG: "error"
     };
     try {
-      this.process = spawn(executable, args, {
+      this.process = import_child_process.spawn(executable, args, {
         cwd: this.workspaceRoot,
         env
       });
@@ -198,8 +268,8 @@ class EmocisClient {
 }
 
 // src/treeViews/memoryTreeProvider.ts
-import * as vscode from "vscode";
-import * as path2 from "path";
+var vscode = __toESM(require("vscode"));
+var path2 = __toESM(require("path"));
 
 class MemoryItem extends vscode.TreeItem {
   label;
@@ -309,7 +379,7 @@ class MemoryTreeProvider {
 }
 
 // src/treeViews/healthTreeProvider.ts
-import * as vscode2 from "vscode";
+var vscode2 = __toESM(require("vscode"));
 
 class HealthItem extends vscode2.TreeItem {
   label;
@@ -382,7 +452,7 @@ class HealthTreeProvider {
 }
 
 // src/codelens/memoryCodeLensProvider.ts
-import * as vscode3 from "vscode";
+var vscode3 = __toESM(require("vscode"));
 
 class MemoryCodeLensProvider {
   _onDidChangeCodeLenses = new vscode3.EventEmitter;
@@ -416,7 +486,7 @@ class MemoryCodeLensProvider {
 }
 
 // src/webview/graphVisualizer.ts
-import * as vscode4 from "vscode";
+var vscode4 = __toESM(require("vscode"));
 
 class GraphVisualizerPanel {
   static currentPanel;
@@ -885,7 +955,3 @@ function deactivate() {
     emocisClient.dispose();
   }
 }
-export {
-  activate,
-  deactivate
-};
