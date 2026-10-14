@@ -289,9 +289,33 @@ impl SqliteStore {
                 },
             };
 
-            if let Some(target_node) = self.get_node(&to_id)? {
-                results.push((edge, target_node));
-            }
+            let target_node = match self.get_node(&to_id)? {
+                Some(n) => n,
+                None => {
+                    let raw_name = edge.qualifier.get("raw_callee")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_else(|| to_id.split(':').nth(3).unwrap_or(&to_id));
+                    let is_db = raw_name.to_lowercase().contains("database") || raw_name.to_lowercase().contains("repository");
+                    let kind = if is_db { NodeKind::Database } else { NodeKind::Function };
+                    Node {
+                        id: to_id.clone(),
+                        kind,
+                        name: raw_name.to_string(),
+                        project_id: "".to_string(),
+                        language: Some("typescript".to_string()),
+                        source: None,
+                        identity: NodeIdentity {
+                            qualified_name: raw_name.to_string(),
+                            signature: None,
+                        },
+                        state: NodeState::default(),
+                        provenance: Provenance::default(),
+                        metadata: serde_json::Value::Null,
+                    }
+                }
+            };
+
+            results.push((edge, target_node));
         }
 
         Ok(results)

@@ -54,9 +54,7 @@ CREATE TABLE IF NOT EXISTS edges (
     confidence REAL NOT NULL,
     certainty TEXT NOT NULL,
     valid_from TEXT NOT NULL,
-    valid_until TEXT,
-    FOREIGN KEY(from_node_id) REFERENCES nodes(id) ON DELETE CASCADE,
-    FOREIGN KEY(to_node_id) REFERENCES nodes(id) ON DELETE CASCADE
+    valid_until TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_edges_from ON edges(from_node_id);
