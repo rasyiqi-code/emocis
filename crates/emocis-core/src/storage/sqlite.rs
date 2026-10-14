@@ -26,10 +26,19 @@ impl SqliteStore {
 
     /// Run SQLite schema migration
     pub fn migrate(&self) -> Result<()> {
+        self.conn.execute_batch("
+            PRAGMA journal_mode = WAL;
+            PRAGMA synchronous = NORMAL;
+            PRAGMA temp_store = MEMORY;
+            PRAGMA foreign_keys = ON;
+        ")?;
         let schema = include_str!("schema.sql");
         self.conn.execute_batch(schema)?;
-        // Enable foreign keys
-        self.conn.execute("PRAGMA foreign_keys = ON;", [])?;
+        Ok(())
+    }
+
+    pub fn execute_batch(&self, sql: &str) -> Result<()> {
+        self.conn.execute_batch(sql)?;
         Ok(())
     }
 

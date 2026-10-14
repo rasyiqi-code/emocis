@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "emocis": {
+      "command": "bun",
+      "args": ["run", "--cwd", "/absolute/path/to/your/project", "emocis-mcp"]
+    }
+  }
+}

@@ -1,7 +1,13 @@
 use emocis_core::{Edge, Node};
 
+pub mod python;
+pub mod registry;
+pub mod rust;
 pub mod typescript;
 
+pub use python::PythonAdapter;
+pub use registry::AdapterRegistry;
+pub use rust::RustAdapter;
 pub use typescript::TypeScriptAdapter;
 
 #[derive(Debug, Clone)]

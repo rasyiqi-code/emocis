@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use emocis_cclg::{LanguageAdapter, TypeScriptAdapter};
+use emocis_cclg::AdapterRegistry;
 use emocis_core::{Snapshot, SqliteStore};
 use emocis_memory::KnowledgeExtractor;
 
@@ -37,33 +37,44 @@ pub fn index_directory(root_path: &Path, project_id: &str) -> anyhow::Result<(us
     };
     store.insert_snapshot(&snapshot)?;
 
-    let ts_adapter = TypeScriptAdapter::new();
+    let registry = AdapterRegistry::new();
     let knowledge_extractor = KnowledgeExtractor::new();
 
     let mut total_files = 0;
     let mut total_nodes = 0;
     let mut total_knowledge = 0;
 
-    index_dir_recursive(
+    store.execute_batch("BEGIN TRANSACTION;")?;
+
+    let index_res = index_dir_recursive(
         root_path,
         root_path,
         project_id,
-        &ts_adapter,
+        &registry,
         &knowledge_extractor,
         &store,
         &mut total_files,
         &mut total_nodes,
         &mut total_knowledge,
-    )?;
+    );
 
-    Ok((total_files, total_nodes, total_knowledge))
+    match index_res {
+        Ok(()) => {
+            store.execute_batch("COMMIT;")?;
+            Ok((total_files, total_nodes, total_knowledge))
+        }
+        Err(err) => {
+            let _ = store.execute_batch("ROLLBACK;");
+            Err(err)
+        }
+    }
 }
 
 fn index_dir_recursive(
     current_dir: &Path,
     root_path: &Path,
     project_id: &str,
-    ts_adapter: &TypeScriptAdapter,
+    registry: &AdapterRegistry,
     knowledge_extractor: &KnowledgeExtractor,
     store: &SqliteStore,
     total_files: &mut usize,
@@ -89,7 +100,7 @@ fn index_dir_recursive(
                 &path,
                 root_path,
                 project_id,
-                ts_adapter,
+                registry,
                 knowledge_extractor,
                 store,
                 total_files,
@@ -112,8 +123,8 @@ fn index_dir_recursive(
                 }
             }
 
-            // 2. Code indexing (TypeScript / JavaScript)
-            if ts_adapter.supported_extensions().contains(&ext) {
+            // 2. Code indexing (Polyglot: TypeScript, JavaScript, Rust, etc.)
+            if let Some(adapter) = registry.get_adapter_for_path(&path) {
                 if let Ok(content) = fs::read_to_string(&path) {
                     *total_files += 1;
 
@@ -125,7 +136,7 @@ fn index_dir_recursive(
                     }
 
                     // CCLG Code Graph from AST
-                    if let Ok(parsed) = ts_adapter.parse_file(project_id, relative_path, &content) {
+                    if let Ok(parsed) = adapter.parse_file(project_id, relative_path, &content) {
                         for node in &parsed.nodes {
                             *total_nodes += 1;
                             store.insert_node(node)?;

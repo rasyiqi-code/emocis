@@ -22,6 +22,7 @@ colored = "3.0"
 tree-sitter = "0.24"
 tree-sitter-typescript = "0.23"
 tree-sitter-rust = "0.23"
+tree-sitter-python = "0.23"
 
 # Local crates
 emocis-core = { path = "crates/emocis-core" }
