@@ -40,12 +40,9 @@ export class MemoryItem extends vscode.TreeItem {
 
       if (file) {
         this.command = {
-          command: "vscode.open",
-          title: "Open File",
-          arguments: [
-            vscode.Uri.file(path.resolve(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "", file)),
-            { selection: new vscode.Range(Math.max(0, startLine - 1), 0, Math.max(0, startLine - 1), 0) }
-          ]
+          command: "emocis.openLocation",
+          title: "Open Location",
+          arguments: [file, startLine]
         };
       }
 

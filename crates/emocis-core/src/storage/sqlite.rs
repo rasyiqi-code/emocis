@@ -617,15 +617,35 @@ impl SqliteStore {
                 .map(|dt| dt.with_timezone(&chrono::Utc))
                 .unwrap_or_else(|_| chrono::Utc::now());
 
+            let id: String = row.get(0)?;
+
+            // Fetch evidence
+            let mut ev_stmt = self.conn.prepare(
+                "SELECT evidence_type, file_path, start_line, end_line, commit_id, snippet
+                 FROM evidence WHERE target_type = 'knowledge' AND target_id = ?1",
+            )?;
+            let mut ev_rows = ev_stmt.query(params![id])?;
+            let mut evidence = Vec::new();
+            while let Some(ev_row) = ev_rows.next()? {
+                evidence.push(Evidence {
+                    evidence_type: ev_row.get(0)?,
+                    file: ev_row.get(1)?,
+                    start_line: ev_row.get(2)?,
+                    end_line: ev_row.get(3)?,
+                    commit_id: ev_row.get(4)?,
+                    snippet: ev_row.get(5)?,
+                });
+            }
+
             items.push(KnowledgeItem {
-                id: row.get(0)?,
+                id,
                 project_id: row.get(1)?,
                 knowledge_type: k_type,
                 title: row.get(3)?,
                 content: row.get(4)?,
                 status,
                 confidence: row.get(6)?,
-                evidence: Vec::new(),
+                evidence,
                 affects,
                 tags,
                 created_at,

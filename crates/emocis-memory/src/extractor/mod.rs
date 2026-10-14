@@ -15,9 +15,9 @@ impl Default for KnowledgeExtractor {
 
 impl KnowledgeExtractor {
     pub fn new() -> Self {
-        // Matches // @tag or // TAG: or /* @tag ... */ or # @tag
+        // Matches // @tag or // TAG: or /* @tag ... */ or # @tag, including natural dev tags (B1:, note:, idempotency:)
         let comment_pattern = Regex::new(
-            r#"(?i)(?://|/\*|#)\s*(?:@|(?:\b))(decision|constraint|warning|caveat|rule|failed[-_]attempt|worklog|architecture)[:\s]+([^\n\r*]+)"#,
+            r#"(?i)(?://|/\*|#)\s*(?:@|(?:\b))(decision|constraint|warning|caveat|rule|b\d+|idempotency|security|note|important|workaround|failed[-_]attempt|worklog|architecture)[:\s]+([^\n\r*]+)"#,
         ).unwrap();
 
         Self { comment_pattern }
@@ -45,21 +45,25 @@ impl KnowledgeExtractor {
 
                 let (k_type, default_title) = match tag_raw.as_str() {
                     "decision" => (KnowledgeType::Decision, "Architectural Decision"),
-                    "constraint" => (KnowledgeType::Constraint, "System Constraint"),
-                    "warning" | "caveat" => (KnowledgeType::Warning, "Engineering Warning"),
+                    "constraint" | "idempotency" | "security" => (KnowledgeType::Constraint, "System Constraint"),
+                    "warning" | "caveat" | "workaround" => (KnowledgeType::Warning, "Engineering Warning"),
                     "rule" => (KnowledgeType::BusinessRule, "Business Rule"),
+                    t if t.starts_with('b') && t[1..].chars().all(|c| c.is_ascii_digit()) => {
+                        (KnowledgeType::BusinessRule, "Business Rule")
+                    }
                     "failed-attempt" | "failed_attempt" => (KnowledgeType::FailedAttempt, "Failed Attempt"),
                     "worklog" => (KnowledgeType::Worklog, "Development Worklog"),
-                    "architecture" => (KnowledgeType::Architecture, "Architecture Note"),
+                    "architecture" | "note" | "important" => (KnowledgeType::Architecture, "Architecture Note"),
                     _ => (KnowledgeType::Decision, "Knowledge Note"),
                 };
 
-                let title = if let Some((head, _)) = text.split_once(':') {
-                    head.trim()
-                } else if text.len() > 50 {
-                    &text[..50]
+                let clean_text = text.trim();
+                let title = if clean_text.len() > 60 {
+                    format!("{}: {}...", tag_raw.to_uppercase(), &clean_text[..57])
+                } else if !clean_text.is_empty() {
+                    format!("{}: {}", tag_raw.to_uppercase(), clean_text)
                 } else {
-                    text
+                    default_title.to_string()
                 };
 
                 let id = IdentityGenerator::for_knowledge(
@@ -71,7 +75,7 @@ impl KnowledgeExtractor {
                     id,
                     project_id: project_id.to_string(),
                     knowledge_type: k_type,
-                    title: if title.is_empty() { default_title.to_string() } else { title.to_string() },
+                    title,
                     content: text.to_string(),
                     status: KnowledgeStatus::Active,
                     confidence: 0.95,
@@ -110,21 +114,45 @@ impl KnowledgeExtractor {
         let mut current_content = Vec::new();
         let mut start_line = 1;
 
+        let is_boilerplate = |h: &str| -> bool {
+            let lower = h.to_lowercase();
+            lower.contains("daftar isi")
+                || lower.contains("table of content")
+                || lower.contains("lisensi")
+                || lower.contains("license")
+                || lower.contains("prasyarat")
+                || lower.contains("prerequisite")
+                || lower.contains("faq")
+                || lower.contains("troubleshooting")
+                || lower.starts_with("opsi ")
+                || lower.contains("fitur utama")
+                || lower.contains("kenapa ")
+                || lower.contains("why ")
+                || lower.contains("instalasi")
+                || lower.contains("installation")
+                || lower.contains("getting started")
+                || lower.contains("quick start")
+                || lower.contains("changelog")
+        };
+
         for (idx, line) in content.lines().enumerate() {
             let line_num = idx as u32 + 1;
             if let Some(caps) = header_regex.captures(line) {
                 // Flush previous section
-                if !current_header.is_empty() && !current_content.is_empty() {
+                if !current_header.is_empty() && !current_content.is_empty() && !is_boilerplate(&current_header) {
                     let content_text = current_content.join("\n").trim().to_string();
                     if !content_text.is_empty() {
-                        let k_type = if current_header.to_lowercase().contains("architecture") {
+                        let lower_header = current_header.to_lowercase();
+                        let k_type = if lower_header.contains("architecture") || lower_header.contains("arsitektur") || lower_header.contains("alur kerja") {
                             KnowledgeType::Architecture
-                        } else if current_header.to_lowercase().contains("decision") {
+                        } else if lower_header.contains("decision") || lower_header.contains("keputusan") || lower_header.contains("adr") {
                             KnowledgeType::Decision
-                        } else if current_header.to_lowercase().contains("constraint") {
+                        } else if lower_header.contains("constraint") || lower_header.contains("batasan") || lower_header.contains("keamanan") || lower_header.contains("security") {
                             KnowledgeType::Constraint
-                        } else {
+                        } else if lower_header.contains("rule") || lower_header.contains("aturan") || lower_header.contains("kebijakan") || lower_header.contains("policy") {
                             KnowledgeType::BusinessRule
+                        } else {
+                            KnowledgeType::Architecture
                         };
 
                         let id = IdentityGenerator::for_knowledge(
@@ -165,17 +193,30 @@ impl KnowledgeExtractor {
         }
 
         // Flush last section
-        if !current_header.is_empty() && !current_content.is_empty() {
+        if !current_header.is_empty() && !current_content.is_empty() && !is_boilerplate(&current_header) {
             let content_text = current_content.join("\n").trim().to_string();
             if !content_text.is_empty() {
+                let lower_header = current_header.to_lowercase();
+                let k_type = if lower_header.contains("architecture") || lower_header.contains("arsitektur") || lower_header.contains("alur kerja") {
+                    KnowledgeType::Architecture
+                } else if lower_header.contains("decision") || lower_header.contains("keputusan") {
+                    KnowledgeType::Decision
+                } else if lower_header.contains("constraint") || lower_header.contains("batasan") {
+                    KnowledgeType::Constraint
+                } else if lower_header.contains("rule") || lower_header.contains("aturan") {
+                    KnowledgeType::BusinessRule
+                } else {
+                    KnowledgeType::Architecture
+                };
+
                 let id = IdentityGenerator::for_knowledge(
-                    "doc",
+                    &format!("{:?}", k_type).to_lowercase(),
                     &format!("{}_{}", file_path.replace('/', "_"), start_line),
                 );
                 items.push(KnowledgeItem {
                     id,
                     project_id: project_id.to_string(),
-                    knowledge_type: KnowledgeType::Architecture,
+                    knowledge_type: k_type,
                     title: current_header,
                     content: content_text,
                     status: KnowledgeStatus::Active,

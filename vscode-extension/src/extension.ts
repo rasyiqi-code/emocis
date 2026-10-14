@@ -49,6 +49,24 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // 3b. Command: Open Location with accurate line & center reveal
+  context.subscriptions.push(
+    vscode.commands.registerCommand("emocis.openLocation", async (file: string, line: number = 1) => {
+      try {
+        const fullPath = path.isAbsolute(file) ? file : path.resolve(workspaceRoot, file);
+        const docUri = vscode.Uri.file(fullPath);
+        const doc = await vscode.workspace.openTextDocument(docUri);
+        const editor = await vscode.window.showTextDocument(doc, { preview: false });
+        const targetLine = Math.max(0, (line || 1) - 1);
+        const range = new vscode.Range(targetLine, 0, targetLine, 0);
+        editor.selection = new vscode.Selection(range.start, range.end);
+        editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+      } catch (err) {
+        outputChannel.appendLine(`[EMOCIS] Failed to open ${file}:${line} - ${err}`);
+      }
+    })
+  );
+
   // 4. Command: Show Graph Visualizer
   context.subscriptions.push(
     vscode.commands.registerCommand("emocis.showGraph", (symbolName?: string) => {

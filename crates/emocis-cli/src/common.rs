@@ -130,8 +130,14 @@ fn index_dir_recursive(
                 }
             }
 
-            // 2. Code indexing (Polyglot: TypeScript, JavaScript, Rust, etc.)
-            if let Some(adapter) = registry.get_adapter_for_path(&path) {
+            // 2. Code indexing (Polyglot: TypeScript, JavaScript, Rust, Python, Kotlin, Java, Go, Vue, etc.)
+            let is_code_ext = matches!(
+                ext,
+                "ts" | "tsx" | "js" | "jsx" | "rs" | "py" | "kt" | "java" | "go" | "vue"
+                    | "svelte" | "c" | "cpp" | "h" | "hpp" | "cs" | "php" | "rb" | "swift" | "sql"
+            );
+
+            if is_code_ext {
                 if let Ok(content) = fs::read_to_string(&path) {
                     *total_files += 1;
 
@@ -142,14 +148,16 @@ fn index_dir_recursive(
                         store.insert_knowledge_item(&item)?;
                     }
 
-                    // CCLG Code Graph from AST
-                    if let Ok(parsed) = adapter.parse_file(project_id, relative_path, &content) {
-                        for node in &parsed.nodes {
-                            *total_nodes += 1;
-                            store.insert_node(node)?;
-                        }
-                        for edge in &parsed.edges {
-                            store.insert_edge(edge)?;
+                    // CCLG Code Graph from AST (if adapter supported)
+                    if let Some(adapter) = registry.get_adapter_for_path(&path) {
+                        if let Ok(parsed) = adapter.parse_file(project_id, relative_path, &content) {
+                            for node in &parsed.nodes {
+                                *total_nodes += 1;
+                                store.insert_node(node)?;
+                            }
+                            for edge in &parsed.edges {
+                                store.insert_edge(edge)?;
+                            }
                         }
                     }
                 }

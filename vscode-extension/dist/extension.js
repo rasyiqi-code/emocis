@@ -73,7 +73,7 @@ var vscode5 = __toESM(require("vscode"));
 
 // src/mcpClient.ts
 var import_child_process = require("child_process");
-var path = __toESM(require("path"));
+var path2 = __toESM(require("path"));
 var fs = __toESM(require("fs"));
 
 class EmocisClient {
@@ -88,9 +88,9 @@ class EmocisClient {
   }
   initProcess() {
     const homeDir = process.env.HOME || "";
-    const cargoBinary = path.join(homeDir, ".cargo", "bin", "emocis");
-    const localTargetBinary = path.join(this.workspaceRoot, "target", "debug", "emocis");
-    const releaseTargetBinary = path.join(this.workspaceRoot, "target", "release", "emocis");
+    const cargoBinary = path2.join(homeDir, ".cargo", "bin", "emocis");
+    const localTargetBinary = path2.join(this.workspaceRoot, "target", "debug", "emocis");
+    const releaseTargetBinary = path2.join(this.workspaceRoot, "target", "release", "emocis");
     const emocisWorkspaceBinary = "/media/rasyiqi/7653717A1C07B131/EMOCIS/target/release/emocis";
     const emocisWorkspaceDebugBinary = "/media/rasyiqi/7653717A1C07B131/EMOCIS/target/debug/emocis";
     let executable = "emocis";
@@ -107,12 +107,12 @@ class EmocisClient {
       executable = emocisWorkspaceDebugBinary;
     } else {
       const bunCandidates = [
-        path.join(homeDir, ".bun", "bin", "bun"),
+        path2.join(homeDir, ".bun", "bin", "bun"),
         "/usr/local/bin/bun",
         "/usr/bin/bun"
       ];
       const bunBin = bunCandidates.find((b) => fs.existsSync(b)) || "bun";
-      const mcpScript = path.join(this.workspaceRoot, "bin", "mcp.js");
+      const mcpScript = path2.join(this.workspaceRoot, "bin", "mcp.js");
       if (fs.existsSync(mcpScript)) {
         executable = bunBin;
         args = [mcpScript];
@@ -269,7 +269,6 @@ class EmocisClient {
 
 // src/treeViews/memoryTreeProvider.ts
 var vscode = __toESM(require("vscode"));
-var path2 = __toESM(require("path"));
 
 class MemoryItem extends vscode.TreeItem {
   label;
@@ -297,12 +296,9 @@ Tags: ${data.tags.join(", ")}`;
       const startLine = data.evidence?.[0]?.start_line ?? 1;
       if (file) {
         this.command = {
-          command: "vscode.open",
-          title: "Open File",
-          arguments: [
-            vscode.Uri.file(path2.resolve(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "", file)),
-            { selection: new vscode.Range(Math.max(0, startLine - 1), 0, Math.max(0, startLine - 1), 0) }
-          ]
+          command: "emocis.openLocation",
+          title: "Open Location",
+          arguments: [file, startLine]
         };
       }
       switch (data.knowledge_type?.toLowerCase()) {
@@ -849,6 +845,20 @@ function activate(context) {
     memoryProvider.refresh();
     healthProvider.refresh();
     vscode5.window.showInformationMessage("EMOCIS: Memory and Health graph refreshed.");
+  }));
+  context.subscriptions.push(vscode5.commands.registerCommand("emocis.openLocation", async (file, line = 1) => {
+    try {
+      const fullPath = path.isAbsolute(file) ? file : path.resolve(workspaceRoot, file);
+      const docUri = vscode5.Uri.file(fullPath);
+      const doc = await vscode5.workspace.openTextDocument(docUri);
+      const editor = await vscode5.window.showTextDocument(doc, { preview: false });
+      const targetLine = Math.max(0, (line || 1) - 1);
+      const range = new vscode5.Range(targetLine, 0, targetLine, 0);
+      editor.selection = new vscode5.Selection(range.start, range.end);
+      editor.revealRange(range, vscode5.TextEditorRevealType.InCenter);
+    } catch (err) {
+      outputChannel.appendLine(`[EMOCIS] Failed to open ${file}:${line} - ${err}`);
+    }
   }));
   context.subscriptions.push(vscode5.commands.registerCommand("emocis.showGraph", (symbolName) => {
     if (!symbolName) {
