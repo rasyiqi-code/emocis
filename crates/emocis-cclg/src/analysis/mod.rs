@@ -2,6 +2,9 @@ use std::collections::{HashSet, VecDeque};
 use emocis_core::{Node, NodeKind, SqliteStore};
 use serde::{Deserialize, Serialize};
 
+pub mod diff;
+pub use diff::{BehavioralDiffEngine, BehavioralDiffReport, BehavioralEdgeDiff, DiffChangeType};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImpactReport {
     pub target_symbol: String,

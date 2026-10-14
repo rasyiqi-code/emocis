@@ -5,14 +5,16 @@
   "main": "bin/project.js",
   "bin": {
     "project": "./bin/project.js",
-    "clg": "./bin/clg.js"
+    "clg": "./bin/clg.js",
+    "emocis-mcp": "./bin/mcp.js"
   },
   "scripts": {
     "build": "cargo build --release",
     "build:dev": "cargo build",
     "test": "cargo test",
     "project": "bun ./bin/project.js",
-    "clg": "bun ./bin/clg.js"
+    "clg": "bun ./bin/clg.js",
+    "mcp": "bun ./bin/mcp.js"
   },
   "keywords": [
     "codebase-intelligence",

@@ -248,6 +248,48 @@ impl SqliteStore {
         Ok(())
     }
 
+    pub fn get_all_edges(&self) -> Result<Vec<Edge>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, from_node_id, to_node_id, kind, qualifier, confidence, certainty, valid_from, valid_until
+             FROM edges",
+        )?;
+
+        let mut rows = stmt.query([])?;
+        let mut edges = Vec::new();
+
+        while let Some(row) = rows.next()? {
+            let kind_raw: String = row.get(3)?;
+            let kind: EdgeKind = serde_json::from_str(&format!("\"{}\"", kind_raw))
+                .unwrap_or(EdgeKind::Calls);
+            let qualifier_raw: String = row.get(4)?;
+            let qualifier: serde_json::Value = serde_json::from_str(&qualifier_raw)
+                .unwrap_or(serde_json::Value::Null);
+            let certainty_raw: String = row.get(6)?;
+            let certainty: Certainty = serde_json::from_str(&format!("\"{}\"", certainty_raw))
+                .unwrap_or(Certainty::Certain);
+
+            edges.push(Edge {
+                id: row.get(0)?,
+                from: row.get(1)?,
+                to: row.get(2)?,
+                kind,
+                qualifier,
+                provenance: Provenance {
+                    source: ProvenanceSource::Ast,
+                    confidence: row.get(5)?,
+                    certainty,
+                    evidence: Vec::new(),
+                },
+                temporal: TemporalRange {
+                    valid_from: row.get(7)?,
+                    valid_until: row.get(8)?,
+                },
+            });
+        }
+
+        Ok(edges)
+    }
+
     /// PRD Part II Section 39: `clg calls <FUNCTION>`
     pub fn get_callees(&self, caller_node_id: &str) -> Result<Vec<(Edge, Node)>> {
         let mut stmt = self.conn.prepare(
