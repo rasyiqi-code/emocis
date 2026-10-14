@@ -6,6 +6,7 @@
 | **Core Pillars:** 1. Engineering Memory Layer  |  2. Canonical Code Logic Graph (CCLG) | **Target Audience:** Engineering Leadership, AI Engineers, Software Architects |   
 | **Category:** Developer Infrastructure / Code Intelligence / Semantic Graph / Static Analysis | **Execution Model:** Local-First Engine with Git-Driven Incremental Indexing |   
 | **Primary Interfaces:** CLI (`project`, `clg`) + Local Embedded Engine | **Integration Targets:** VS Code Extension + Model Context Protocol (MCP) + Web UI |   
+| **Distribution Channels:** Bun (`bun add -g emocis`), NPM (`npm i -g emocis`), Cargo (`cargo install emocis-cli`), Standalone Binary | **Implementation Core:** High-Performance Rust Engine with Native Tree-sitter & Embedded SQLite |   
    
 **Executive Framing: Dua Fondasi yang Saling Mengunci**  
 Dokumen ini mendefinisikan arsitektur lengkap platform Codebase Intelligence modern melalui dua pilar yang saling melengkapi secara fundamental:  
@@ -477,4 +478,53 @@ Tujuan akhirnya bukan menghasilkan visualisasi grafis semata, melainkan membuat 
 | |  
 |-|  
 | **■ Pipeline End-to-End Codebase Intelligence **Source Code  ──>  Parser  ──>  Canonical Graph  ──>  Semantic Analysis  ──>  Behavior Model  ──>  Impact Analysis  ──>  AI Context  ──>  Engineering Memory |   
+   
+**49. Packaging, Distribution & Deployment Architecture**  
+**49.1 Philosophy: Native Speed, Zero-Friction Installation**  
+Sistem dibangun menggunakan core engine Rust untuk memastikan performa tingkat kompilator, pemrosesan AST kilat via Tree-sitter, serta konsumsi memori yang sangat hemat. Namun dari sudut pandang pengguna (developer experience), proses instalasi harus bersifat *frictionless* dan tidak mewajibkan pengguna untuk menginstal toolchain Rust (`cargo`/`rustc`) di komputer mereka.  
+Oleh karena itu, EMOCIS mendistribusikan binary native yang telah dikompilasi (pre-built) melalui package manager universal developer seperti **Bun**, **NPM**, **Cargo**, dan **GitHub Releases**.  
+
+| |  
+|-|  
+| **■ Ekosistem Distribusi Universal EMOCIS **┌────────────────────────────────────────────────────────┐│                 RUST CORE ENGINE (EMOCIS)               ││  Pre-compiled Static Binaries (Linux, macOS, Windows)  │└───────────────────────────┬────────────────────────────┘                            │ Multi-Platform Distribution Channels            ┌───────────────┼───────────────┬───────────────┐           ▼               ▼               ▼               ▼    ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐    │ Bun Package │ │ NPM Package │ │ Cargo Crate │ │ Standalone  │    │ bun add -g  │ │ npm i -g    │ │ cargo inst. │ │ Release Bin │    └──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘           └───────────────┼───────────────┴───────────────┘                            ▼                  USER TERMINAL INTERFACE                  $ project <cmd>  |  $ clg <cmd> |   
+   
+**49.2 JavaScript & TypeScript Ecosystem (Bun & NPM)**  
+Paket `emocis` dipublikasikan ke npm registry (`npmjs.com/package/emocis`). Paket ini berisi wrapper JavaScript tipis dan dependency platform-specific binary (mengikuti pola standar industri yang digunakan oleh Biome, Tailwind CSS v4, dan esbuild):  
+- **Instalasi Global via Bun (Direkomendasikan)**:  
+  ```bash
+  bun add -g emocis
+  ```  
+- **Instalasi Global via NPM / PNPM / Yarn**:  
+  ```bash
+  npm install -g emocis
+  pnpm add -g emocis
+  yarn global add emocis
+  ```  
+- **Eksekusi Seketika Tanpa Instalasi (Zero-Install)**:  
+  ```bash
+  bunx emocis project map
+  npx emocis clg calls checkout
+  ```  
+- **Registrasi Dual Binary CLI**:  
+  Paket otomatis mengekspos dua binary utama ke dalam `$PATH` sistem pengguna:  
+  1. `project` — Interface Engineering Memory & Knowledge System.  
+  2. `clg` — Interface Canonical Code Logic Graph.  
+  3. `emocis` — Unified command untuk mengontrol kedua pilar.  
+
+**49.3 Rust Ecosystem (Cargo)**  
+Bagi engineer dalam ekosistem Rust atau lingkungan server Linux headless, EMOCIS tersedia melalui crates.io:  
+```bash
+cargo install emocis-cli
+```  
+
+**49.4 Standalone Precompiled Binaries & GitHub Releases**  
+Setiap rilis versi stabil memicu CI/CD automated cross-compilation matrix yang menghasilkan arsip binary mandiri (`.tar.gz` / `.zip`) untuk kebutuhan pipeline CI/CD (GitHub Actions, GitLab CI, Docker):  
+- `emocis-linux-x86_64.tar.gz` (Linux GNU / Musl)  
+- `emocis-linux-aarch64.tar.gz` (ARM64 Linux)  
+- `emocis-darwin-arm64.tar.gz` (Apple Silicon M1/M2/M3/M4)  
+- `emocis-darwin-x86_64.tar.gz` (Apple Intel)  
+- `emocis-windows-x86_64.zip` (Windows 64-bit)  
+
+**49.5 Kompatibilitas Data & Upgrade Path**  
+Penyimpanan lokal repositori berada di dalam folder terisolasi `.emocis/emocis.db`. Engine SQLite mengimplementasikan migrasi skema inkremental otomatis (`PRAGMA user_version`), sehingga saat pengguna melakukan upgrade versi paket CLI (`bun update -g emocis` atau `npm update -g emocis`), basis data graf pengetahuan lokal tetap utuh dan kompatibel tanpa perlu melakukan indeks ulang dari nol.  
    
