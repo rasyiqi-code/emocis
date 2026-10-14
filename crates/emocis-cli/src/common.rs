@@ -90,8 +90,15 @@ fn index_dir_recursive(
         let path = entry.path();
         let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
-        // Skip hidden, git, target, node_modules
-        if file_name.starts_with('.') || file_name == "target" || file_name == "node_modules" {
+        // Skip hidden, git, target, node_modules, build outputs
+        if file_name.starts_with('.')
+            || file_name == "target"
+            || file_name == "node_modules"
+            || file_name == "dist"
+            || file_name == "build"
+            || file_name == "out"
+            || file_name == "coverage"
+        {
             continue;
         }
 

@@ -8,11 +8,7 @@ import { GraphVisualizerPanel } from "./webview/graphVisualizer";
 let emocisClient: EmocisClient | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
-  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  if (!workspaceRoot) {
-    console.log("No workspace folder found for EMOCIS extension.");
-    return;
-  }
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
 
   emocisClient = new EmocisClient(workspaceRoot);
 
@@ -20,8 +16,10 @@ export function activate(context: vscode.ExtensionContext) {
   const memoryProvider = new MemoryTreeProvider(emocisClient);
   const healthProvider = new HealthTreeProvider(emocisClient);
 
-  vscode.window.registerTreeDataProvider("emocis.memoryView", memoryProvider);
-  vscode.window.registerTreeDataProvider("emocis.healthView", healthProvider);
+  context.subscriptions.push(
+    vscode.window.registerTreeDataProvider("emocis.memoryView", memoryProvider),
+    vscode.window.registerTreeDataProvider("emocis.healthView", healthProvider)
+  );
 
   // 2. CodeLens Provider for multi-language ASTs
   const supportedLanguages = [

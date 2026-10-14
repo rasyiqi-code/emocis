@@ -17,54 +17,85 @@ class EmocisClient {
     this.initProcess();
   }
   initProcess() {
-    const localMcpScript = path.join(this.workspaceRoot, "bin", "mcp.js");
-    const targetBinary = path.join(this.workspaceRoot, "target", "debug", "emocis");
-    if (fs.existsSync(localMcpScript)) {
-      this.process = spawn("bun", [localMcpScript], {
-        cwd: this.workspaceRoot,
-        env: { ...process.env, RUST_LOG: "error" }
-      });
-    } else if (fs.existsSync(targetBinary)) {
-      this.process = spawn(targetBinary, ["mcp"], {
-        cwd: this.workspaceRoot,
-        env: { ...process.env, RUST_LOG: "error" }
-      });
+    const homeDir = process.env.HOME || "";
+    const cargoBinary = path.join(homeDir, ".cargo", "bin", "emocis");
+    const localTargetBinary = path.join(this.workspaceRoot, "target", "debug", "emocis");
+    const releaseTargetBinary = path.join(this.workspaceRoot, "target", "release", "emocis");
+    const emocisWorkspaceBinary = "/media/rasyiqi/7653717A1C07B131/EMOCIS/target/release/emocis";
+    const emocisWorkspaceDebugBinary = "/media/rasyiqi/7653717A1C07B131/EMOCIS/target/debug/emocis";
+    let executable = "emocis";
+    let args = ["mcp"];
+    if (fs.existsSync(cargoBinary)) {
+      executable = cargoBinary;
+    } else if (fs.existsSync(releaseTargetBinary)) {
+      executable = releaseTargetBinary;
+    } else if (fs.existsSync(localTargetBinary)) {
+      executable = localTargetBinary;
+    } else if (fs.existsSync(emocisWorkspaceBinary)) {
+      executable = emocisWorkspaceBinary;
+    } else if (fs.existsSync(emocisWorkspaceDebugBinary)) {
+      executable = emocisWorkspaceDebugBinary;
     } else {
-      this.process = spawn("bun", ["run", "mcp"], {
-        cwd: this.workspaceRoot,
-        env: { ...process.env, RUST_LOG: "error" }
-      });
-    }
-    this.process.stdout.on("data", (chunk) => {
-      this.buffer += chunk.toString("utf8");
-      const lines = this.buffer.split(`
-`);
-      this.buffer = lines.pop() || "";
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith("{"))
-          continue;
-        try {
-          const json = JSON.parse(trimmed);
-          if (json.id !== undefined && this.pendingRequests.has(json.id)) {
-            const { resolve, reject } = this.pendingRequests.get(json.id);
-            this.pendingRequests.delete(json.id);
-            if (json.error) {
-              reject(new Error(json.error.message || "MCP Error"));
-            } else {
-              resolve(json.result);
-            }
-          }
-        } catch {}
+      const bunCandidates = [
+        path.join(homeDir, ".bun", "bin", "bun"),
+        "/usr/local/bin/bun",
+        "/usr/bin/bun"
+      ];
+      const bunBin = bunCandidates.find((b) => fs.existsSync(b)) || "bun";
+      const mcpScript = path.join(this.workspaceRoot, "bin", "mcp.js");
+      if (fs.existsSync(mcpScript)) {
+        executable = bunBin;
+        args = [mcpScript];
       }
-    });
-    this.process.on("error", (err) => {
-      console.error("[EMOCIS Client] Subprocess error:", err);
-    });
-    this.process.on("exit", (code) => {
-      console.log(`[EMOCIS Client] Subprocess exited with code ${code}`);
+    }
+    const env = {
+      ...process.env,
+      PATH: `${homeDir}/.cargo/bin:${homeDir}/.bun/bin:${process.env.PATH || ""}`,
+      RUST_LOG: "error"
+    };
+    try {
+      this.process = spawn(executable, args, {
+        cwd: this.workspaceRoot,
+        env
+      });
+      this.process.stdout.on("data", (chunk) => {
+        this.buffer += chunk.toString("utf8");
+        const lines = this.buffer.split(`
+`);
+        this.buffer = lines.pop() || "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith("{"))
+            continue;
+          try {
+            const json = JSON.parse(trimmed);
+            if (json.id !== undefined && this.pendingRequests.has(json.id)) {
+              const { resolve, reject } = this.pendingRequests.get(json.id);
+              this.pendingRequests.delete(json.id);
+              if (json.error) {
+                reject(new Error(json.error.message || "MCP Error"));
+              } else {
+                resolve(json.result);
+              }
+            }
+          } catch {}
+        }
+      });
+      this.process.on("error", (err) => {
+        console.error("[EMOCIS Client] Subprocess error:", err);
+        for (const [, req] of this.pendingRequests) {
+          req.resolve({ content: [] });
+        }
+        this.pendingRequests.clear();
+      });
+      this.process.on("exit", (code) => {
+        console.log(`[EMOCIS Client] Subprocess exited with code ${code}`);
+        this.process = null;
+      });
+    } catch (e) {
+      console.error("[EMOCIS Client] Failed to spawn:", e);
       this.process = null;
-    });
+    }
   }
   async callTool(name, args = {}) {
     if (!this.process) {
@@ -85,18 +116,18 @@ class EmocisClient {
       const timeout = setTimeout(() => {
         if (this.pendingRequests.has(id)) {
           this.pendingRequests.delete(id);
-          reject(new Error(`Timeout calling EMOCIS tool '${name}'`));
+          resolve("");
         }
-      }, 1e4);
+      }, 3000);
       this.pendingRequests.set(id, {
         resolve: (result) => {
           clearTimeout(timeout);
           const text = result?.content?.[0]?.text ?? "";
           resolve(text);
         },
-        reject: (err) => {
+        reject: () => {
           clearTimeout(timeout);
-          reject(err);
+          resolve("");
         }
       });
       this.process?.stdin.write(payload);
@@ -728,16 +759,11 @@ class GraphVisualizerPanel {
 // src/extension.ts
 var emocisClient;
 function activate(context) {
-  const workspaceRoot = vscode5.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  if (!workspaceRoot) {
-    console.log("No workspace folder found for EMOCIS extension.");
-    return;
-  }
+  const workspaceRoot = vscode5.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
   emocisClient = new EmocisClient(workspaceRoot);
   const memoryProvider = new MemoryTreeProvider(emocisClient);
   const healthProvider = new HealthTreeProvider(emocisClient);
-  vscode5.window.registerTreeDataProvider("emocis.memoryView", memoryProvider);
-  vscode5.window.registerTreeDataProvider("emocis.healthView", healthProvider);
+  context.subscriptions.push(vscode5.window.registerTreeDataProvider("emocis.memoryView", memoryProvider), vscode5.window.registerTreeDataProvider("emocis.healthView", healthProvider));
   const supportedLanguages = [
     { language: "typescript" },
     { language: "typescriptreact" },

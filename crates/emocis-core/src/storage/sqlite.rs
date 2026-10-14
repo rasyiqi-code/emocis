@@ -420,6 +420,43 @@ impl SqliteStore {
         Ok(results)
     }
 
+    pub fn get_cross_file_calls(&self) -> Result<Vec<(String, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT n1.file_path, n2.file_path
+             FROM edges e
+             JOIN nodes n1 ON e.from_node_id = n1.id
+             JOIN nodes n2 ON e.to_node_id = n2.id
+             WHERE e.kind = 'calls' AND n1.file_path IS NOT NULL AND n2.file_path IS NOT NULL AND n1.file_path != n2.file_path",
+        )?;
+        let mut rows = stmt.query([])?;
+        let mut results = Vec::new();
+        while let Some(row) = rows.next()? {
+            let f1: String = row.get(0)?;
+            let f2: String = row.get(1)?;
+            results.push((f1, f2));
+        }
+        Ok(results)
+    }
+
+    pub fn get_uncalled_functions(&self, limit: usize) -> Result<Vec<(String, String, u32)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT n.name, n.file_path, COALESCE(n.start_line, 1)
+             FROM nodes n
+             WHERE n.kind = 'function' AND n.file_path IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.to_node_id = n.id AND e.kind = 'calls')
+             LIMIT ?1",
+        )?;
+        let mut rows = stmt.query(params![limit as i64])?;
+        let mut results = Vec::new();
+        while let Some(row) = rows.next()? {
+            let name: String = row.get(0)?;
+            let file: String = row.get(1)?;
+            let line: u32 = row.get(2)?;
+            results.push((name, file, line));
+        }
+        Ok(results)
+    }
+
     // ==========================================
     // Knowledge Operations (Part I)
     // ==========================================

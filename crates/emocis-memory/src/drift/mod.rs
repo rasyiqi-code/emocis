@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use emocis_core::{NodeKind, SqliteStore};
+use emocis_core::SqliteStore;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,62 +70,47 @@ impl<'a> DriftDetector<'a> {
         // Map edges between different top-level / sub directories
         let mut dir_dependencies: HashMap<String, HashSet<String>> = HashMap::new();
 
-        let all_edges = self.store.get_all_edges()?;
-        for edge in all_edges {
-            if let (Some(caller_node), Some(callee_node)) = (self.store.get_node(&edge.from)?, self.store.get_node(&edge.to)?) {
-                if let (Some(loc1), Some(loc2)) = (caller_node.source, callee_node.source) {
-                    if loc1.file != loc2.file {
-                        let dir1 = get_module_dir(&loc1.file);
-                        let dir2 = get_module_dir(&loc2.file);
+        let cross_calls = self.store.get_cross_file_calls()?;
+        for (file1, file2) in cross_calls {
+            let dir1 = get_module_dir(&file1);
+            let dir2 = get_module_dir(&file2);
 
-                        if dir1 != dir2 && !dir1.is_empty() && !dir2.is_empty() {
-                            dir_dependencies.entry(dir1.clone()).or_default().insert(dir2.clone());
+            if dir1 != dir2 && !dir1.is_empty() && !dir2.is_empty() {
+                dir_dependencies.entry(dir1.clone()).or_default().insert(dir2.clone());
 
-                            // Check if reverse dependency exists: dir2 already calls dir1
-                            if let Some(target_deps) = dir_dependencies.get(&dir2) {
-                                if target_deps.contains(&dir1) {
-                                    violations.push(DriftViolation {
-                                        severity: DriftSeverity::Critical,
-                                        title: format!("Circular Dependency Terdeteksi: {} <───> {}", dir1, dir2),
-                                        description: format!(
-                                            "Modul '{}' memanggil '{}' dan sebaliknya modul '{}' memanggil '{}'. Keterikatan siklik ini merusak modularitas dan menyulitkan testing.",
-                                            dir1, dir2, dir2, dir1
-                                        ),
-                                        location: Some(format!("Antara {} dan {}", loc1.file, loc2.file)),
-                                        recommendation: "Pecah dependensi siklik dengan memindahkan interface atau tipe bersama ke modul terpisah (DIP / Dependency Inversion).".to_string(),
-                                    });
-                                }
-                            }
-                        }
+                // Check if reverse dependency exists: dir2 already calls dir1
+                if let Some(target_deps) = dir_dependencies.get(&dir2) {
+                    if target_deps.contains(&dir1) {
+                        violations.push(DriftViolation {
+                            severity: DriftSeverity::Critical,
+                            title: format!("Circular Dependency Terdeteksi: {} <───> {}", dir1, dir2),
+                            description: format!(
+                                "Modul '{}' memanggil '{}' dan sebaliknya modul '{}' memanggil '{}'. Keterikatan siklik ini merusak modularitas dan menyulitkan testing.",
+                                dir1, dir2, dir2, dir1
+                            ),
+                            location: Some(format!("Antara {} dan {}", file1, file2)),
+                            recommendation: "Pecah dependensi siklik dengan memindahkan interface atau tipe bersama ke modul terpisah (DIP / Dependency Inversion).".to_string(),
+                        });
                     }
                 }
             }
         }
 
         // 2. Dead Logic / Orphan Function Detection (PRD Section 34)
-        let all_nodes = self.store.find_nodes_by_name("")?;
-        for node in all_nodes {
-            if node.kind == NodeKind::Function {
-                if let Ok(callers) = self.store.get_callers(&node.id) {
-                    if callers.is_empty() {
-                        // Check if it is exported or private
-                        if let Some(loc) = &node.source {
-                            // Non-main / non-index files with unreferenced functions
-                            if !loc.file.contains("main") && !loc.file.contains("index") && !loc.file.contains("test") {
-                                violations.push(DriftViolation {
-                                    severity: DriftSeverity::Low,
-                                    title: format!("Possible Dead Logic: Fungsi '{}' tidak memiliki pemanggil", node.name),
-                                    description: format!(
-                                        "Fungsi '{}' di '{}' tidak dipanggil oleh bagian manapun di dalam graf kode.",
-                                        node.name, loc.file
-                                    ),
-                                    location: Some(format!("{}:{}", loc.file, loc.start_line)),
-                                    recommendation: "Periksa apakah fungsi ini masih digunakan, merupakan API publik eksternal, atau kode mati yang aman dibersihkan.".to_string(),
-                                });
-                            }
-                        }
-                    }
-                }
+        let uncalled = self.store.get_uncalled_functions(50)?;
+        for (fn_name, file_path, line) in uncalled {
+            // Non-main / non-index files with unreferenced functions
+            if !file_path.contains("main") && !file_path.contains("index") && !file_path.contains("test") {
+                violations.push(DriftViolation {
+                    severity: DriftSeverity::Low,
+                    title: format!("Possible Dead Logic: Fungsi '{}' tidak memiliki pemanggil", fn_name),
+                    description: format!(
+                        "Fungsi '{}' di '{}' tidak dipanggil oleh bagian manapun di dalam graf kode.",
+                        fn_name, file_path
+                    ),
+                    location: Some(format!("{}:{}", file_path, line)),
+                    recommendation: "Periksa apakah fungsi ini masih digunakan, merupakan API publik eksternal, atau kode mati yang aman dibersihkan.".to_string(),
+                });
             }
         }
 

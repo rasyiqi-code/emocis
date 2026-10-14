@@ -18,7 +18,9 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onView:emocis.memoryView",
+    "onView:emocis.healthView"
   ],
   "contributes": {
     "viewsContainers": {
