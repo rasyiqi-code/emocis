@@ -14,7 +14,9 @@
     "test": "cargo test",
     "project": "bun ./bin/project.js",
     "clg": "bun ./bin/clg.js",
-    "mcp": "bun ./bin/mcp.js"
+    "mcp": "bun ./bin/mcp.js",
+    "ext:build": "cd vscode-extension && bun run build",
+    "ext:package": "cd vscode-extension && bun run build && bunx @vscode/vsce package --no-git-tag-version"
   },
   "keywords": [
     "codebase-intelligence",

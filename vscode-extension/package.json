@@ -1,0 +1,129 @@
+{
+  "name": "emocis-vscode",
+  "displayName": "EMOCIS — Codebase Intelligence & Engineering Memory",
+  "description": "Interactive Logic Graph (CCLG), Architecture Drift Detection, and Engineering Memory System for VS Code & Cursor",
+  "version": "0.1.0",
+  "publisher": "emocis",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/emocis/emocis"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Visualization",
+    "Education"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "emocis-sidebar",
+          "title": "EMOCIS",
+          "icon": "media/sidebar-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "emocis-sidebar": [
+        {
+          "id": "emocis.memoryView",
+          "name": "Engineering Memory (TOC)",
+          "visibility": "visible"
+        },
+        {
+          "id": "emocis.healthView",
+          "name": "Architecture Health & Drift",
+          "visibility": "visible"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "emocis.refresh",
+        "title": "Refresh Memory Graph",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "emocis.search",
+        "title": "EMOCIS: Search Engineering Memory",
+        "icon": "$(search)"
+      },
+      {
+        "command": "emocis.showGraph",
+        "title": "EMOCIS: Show Logic Graph (CCLG Visualizer)",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "emocis.analyzeImpact",
+        "title": "EMOCIS: Analyze Symbol Impact",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "emocis.copyContext",
+        "title": "EMOCIS: Copy Minimal Context Package for AI",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "emocis.audit",
+        "title": "EMOCIS: Run Architecture Audit",
+        "icon": "$(shield)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "emocis.refresh",
+          "when": "view == emocis.memoryView || view == emocis.healthView",
+          "group": "navigation"
+        },
+        {
+          "command": "emocis.showGraph",
+          "when": "view == emocis.memoryView",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "emocis.analyzeImpact",
+          "group": "emocis@1"
+        },
+        {
+          "command": "emocis.showGraph",
+          "group": "emocis@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "EMOCIS",
+      "properties": {
+        "emocis.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Custom path to the emocis / project binary if not installed globally or via bun."
+        },
+        "emocis.enableCodeLens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show engineering memory badges and caller counts above functions."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "bun build ./src/extension.ts --target=node --outfile=./dist/extension.js --external vscode",
+    "watch": "bun build ./src/extension.ts --target=node --outfile=./dist/extension.js --external vscode --watch",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.0.0"
+  }
+}
