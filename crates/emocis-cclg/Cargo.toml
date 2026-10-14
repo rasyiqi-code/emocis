@@ -1,0 +1,15 @@
+[package]
+name = "emocis-cclg"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+emocis-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tree-sitter = { workspace = true }
+tree-sitter-typescript = { workspace = true }
+tree-sitter-rust = { workspace = true }
+petgraph = { workspace = true }

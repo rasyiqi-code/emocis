@@ -1,0 +1,27 @@
+{
+  "name": "emocis",
+  "version": "0.1.0",
+  "description": "Engineering Memory & Codebase Intelligence System (Local-first Engine & CLI)",
+  "main": "bin/project.js",
+  "bin": {
+    "project": "./bin/project.js",
+    "clg": "./bin/clg.js"
+  },
+  "scripts": {
+    "build": "cargo build --release",
+    "build:dev": "cargo build",
+    "test": "cargo test",
+    "project": "bun ./bin/project.js",
+    "clg": "bun ./bin/clg.js"
+  },
+  "keywords": [
+    "codebase-intelligence",
+    "engineering-memory",
+    "cclg",
+    "ast",
+    "tree-sitter",
+    "code-graph",
+    "static-analysis"
+  ],
+  "license": "MIT"
+}

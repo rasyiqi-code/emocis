@@ -1,0 +1,15 @@
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# EMOCIS data directories & SQLite DBs
+.emocis/
+*.db
+*.db-shm
+*.db-wal
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
