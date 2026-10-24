@@ -93,3 +93,38 @@ CREATE TABLE IF NOT EXISTS knowledge_items (
 CREATE INDEX IF NOT EXISTS idx_knowledge_project ON knowledge_items(project_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_type ON knowledge_items(knowledge_type);
 CREATE INDEX IF NOT EXISTS idx_knowledge_status ON knowledge_items(status);
+
+-- FTS5 Full-Text Search Virtual Table for Knowledge Items
+CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
+    item_id UNINDEXED,
+    title,
+    content,
+    tags,
+    tokenize = 'porter unicode61'
+);
+
+-- Real-time Sync Triggers for FTS5
+CREATE TRIGGER IF NOT EXISTS trg_knowledge_ai AFTER INSERT ON knowledge_items BEGIN
+    INSERT INTO knowledge_fts(item_id, title, content, tags)
+    VALUES (new.id, new.title, new.content, COALESCE(new.tags, ''));
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_knowledge_ad AFTER DELETE ON knowledge_items BEGIN
+    DELETE FROM knowledge_fts WHERE item_id = old.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_knowledge_au AFTER UPDATE ON knowledge_items BEGIN
+    DELETE FROM knowledge_fts WHERE item_id = old.id;
+    INSERT INTO knowledge_fts(item_id, title, content, tags)
+    VALUES (new.id, new.title, new.content, COALESCE(new.tags, ''));
+END;
+
+-- Incremental Indexing Content-Hash Cache
+CREATE TABLE IF NOT EXISTS file_hashes (
+    project_id TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(project_id, file_path),
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);

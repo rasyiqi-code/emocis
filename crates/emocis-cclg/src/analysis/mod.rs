@@ -1,12 +1,14 @@
-use std::collections::{HashSet, VecDeque};
 use emocis_core::{Node, NodeKind, SqliteStore};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashSet, VecDeque};
 
 pub mod diff;
 pub use diff::{BehavioralDiffEngine, BehavioralDiffReport, BehavioralEdgeDiff, DiffChangeType};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImpactReport {
+    pub analysis_note: String,
+    pub unresolved_calls: usize,
     pub target_symbol: String,
     pub target_node: Option<Node>,
     pub direct_callers: Vec<Node>,
@@ -70,7 +72,9 @@ impl<'a> GraphAnalyzer<'a> {
                 let callers = self.store.get_callers(&curr_node.id)?;
                 for (_, parent_caller) in callers {
                     if visited.insert(parent_caller.id.clone()) {
-                        if parent_caller.kind == NodeKind::Endpoint || parent_caller.kind == NodeKind::Api {
+                        if parent_caller.kind == NodeKind::Endpoint
+                            || parent_caller.kind == NodeKind::Api
+                        {
                             exposed_endpoints.push(parent_caller.clone());
                         } else {
                             indirect_callers.push(parent_caller.clone());
@@ -81,7 +85,20 @@ impl<'a> GraphAnalyzer<'a> {
             }
         }
 
+        let mut unresolved_calls = 0;
+        for edge in self.store.get_all_edges()? {
+            if edge.kind == emocis_core::EdgeKind::Calls && self.store.get_node(&edge.to)?.is_none()
+            {
+                if let Some(caller) = self.store.get_node(&edge.from)? {
+                    if caller.kind != NodeKind::CallSite {
+                        unresolved_calls += 1;
+                    }
+                }
+            }
+        }
         Ok(ImpactReport {
+            analysis_note: "Partial static graph, limited to indexed syntax and supported import resolution. Zero callers does not prove a symbol is unused. Traversal is limited to depth 5.".to_string(),
+            unresolved_calls,
             target_symbol: symbol_query.to_string(),
             target_node,
             direct_callers,
@@ -92,7 +109,11 @@ impl<'a> GraphAnalyzer<'a> {
     }
 
     /// PRD Part II Section 30: End-to-End Path Analysis
-    pub fn find_path(&self, source_query: &str, target_query: &str) -> anyhow::Result<ExecutionPath> {
+    pub fn find_path(
+        &self,
+        source_query: &str,
+        target_query: &str,
+    ) -> anyhow::Result<ExecutionPath> {
         let source_candidates = self.store.find_nodes_by_name(source_query)?;
         let target_candidates = self.store.find_nodes_by_name(target_query)?;
 

@@ -32,7 +32,7 @@ impl<'a> FailedAttemptsManager<'a> {
         provenance_pr_or_commit: &str,
         affected_modules: Vec<String>,
     ) -> anyhow::Result<String> {
-        let unique_id = format!("failure_{}", chrono::Utc::now().timestamp());
+        let unique_id = format!("failure_{}", uuid::Uuid::new_v4());
         let id = IdentityGenerator::for_knowledge("failed_attempt", &unique_id);
 
         let content = format!(
@@ -78,7 +78,11 @@ impl<'a> FailedAttemptsManager<'a> {
                     approach: item.title.replace("Failed Approach: ", ""),
                     reason_rejected: item.content.clone(),
                     replaced_by: "".to_string(),
-                    provenance_source: item.evidence.first().and_then(|e| e.commit_id.clone()).unwrap_or_default(),
+                    provenance_source: item
+                        .evidence
+                        .first()
+                        .and_then(|e| e.commit_id.clone())
+                        .unwrap_or_default(),
                     affected_modules: item.affects,
                 });
             }

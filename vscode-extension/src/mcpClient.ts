@@ -1,8 +1,10 @@
+import { parseAudit, parseHealth } from "./contracts";
 import { spawn, ChildProcessWithoutNullStreams } from "child_process";
 import * as path from "path";
 import * as fs from "fs";
 
 export interface McpToolResponse {
+  isError?: boolean;
   content: Array<{
     type: string;
     text: string;
@@ -26,22 +28,15 @@ export class EmocisClient {
     const cargoBinary = path.join(homeDir, ".cargo", "bin", "emocis");
     const localTargetBinary = path.join(this.workspaceRoot, "target", "debug", "emocis");
     const releaseTargetBinary = path.join(this.workspaceRoot, "target", "release", "emocis");
-    const emocisWorkspaceBinary = "/media/rasyiqi/7653717A1C07B131/EMOCIS/target/release/emocis";
-    const emocisWorkspaceDebugBinary = "/media/rasyiqi/7653717A1C07B131/EMOCIS/target/debug/emocis";
-
     let executable = "emocis";
     let args: string[] = ["mcp"];
 
-    if (fs.existsSync(cargoBinary)) {
-      executable = cargoBinary;
-    } else if (fs.existsSync(releaseTargetBinary)) {
+    if (fs.existsSync(releaseTargetBinary)) {
       executable = releaseTargetBinary;
     } else if (fs.existsSync(localTargetBinary)) {
       executable = localTargetBinary;
-    } else if (fs.existsSync(emocisWorkspaceBinary)) {
-      executable = emocisWorkspaceBinary;
-    } else if (fs.existsSync(emocisWorkspaceDebugBinary)) {
-      executable = emocisWorkspaceDebugBinary;
+    } else if (fs.existsSync(cargoBinary)) {
+      executable = cargoBinary;
     } else {
       const bunCandidates = [
         path.join(homeDir, ".bun", "bin", "bun"),
@@ -96,7 +91,7 @@ export class EmocisClient {
       this.process.on("error", (err) => {
         console.error("[EMOCIS Client] Subprocess error:", err);
         for (const [, req] of this.pendingRequests) {
-          req.resolve({ content: [] });
+          req.reject(err);
         }
         this.pendingRequests.clear();
       });
@@ -104,6 +99,8 @@ export class EmocisClient {
       this.process.on("exit", (code) => {
         console.log(`[EMOCIS Client] Subprocess exited with code ${code}`);
         this.process = null;
+        for (const [, req] of this.pendingRequests) req.reject(new Error(`Engine exited: ${code}`));
+        this.pendingRequests.clear();
       });
     } catch (e) {
       console.error("[EMOCIS Client] Failed to spawn:", e);
@@ -131,19 +128,23 @@ export class EmocisClient {
       const timeout = setTimeout(() => {
         if (this.pendingRequests.has(id)) {
           this.pendingRequests.delete(id);
-          resolve("");
+          reject(new Error("EMOCIS request timed out"));
         }
-      }, 3000);
+      }, 10000);
 
       this.pendingRequests.set(id, {
         resolve: (result: McpToolResponse) => {
           clearTimeout(timeout);
           const text = result?.content?.[0]?.text ?? "";
+          if (result?.isError) {
+            reject(new Error(text || "EMOCIS tool failed"));
+            return;
+          }
           resolve(text);
         },
-        reject: () => {
+        reject: (error: Error) => {
           clearTimeout(timeout);
-          resolve("");
+          reject(error);
         },
       });
 
@@ -153,11 +154,7 @@ export class EmocisClient {
 
   public async search(query: string) {
     const raw = await this.callTool("emocis_search", { query });
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return [];
-    }
+    return JSON.parse(raw);
   }
 
   public async getContext(intent: string) {
@@ -171,47 +168,25 @@ export class EmocisClient {
 
   public async getImpact(symbol: string) {
     const raw = await this.callTool("emocis_impact", { symbol });
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
+    return JSON.parse(raw);
   }
 
   public async getCalls(fn: string) {
     const raw = await this.callTool("emocis_calls", { function: fn });
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return [];
-    }
+    return JSON.parse(raw);
   }
 
   public async getCallers(fn: string) {
     const raw = await this.callTool("emocis_callers", { function: fn });
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return [];
-    }
+    return JSON.parse(raw);
   }
 
   public async getHealth() {
-    const raw = await this.callTool("emocis_health");
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
+    return parseHealth(await this.callTool("emocis_health"));
   }
 
   public async getAudit() {
-    const raw = await this.callTool("emocis_audit");
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return [];
-    }
+    return parseAudit(await this.callTool("emocis_audit"));
   }
 
   public dispose() {

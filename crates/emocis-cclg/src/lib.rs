@@ -1,5 +1,13 @@
 pub mod adapter;
 pub mod analysis;
 
-pub use adapter::{AdapterRegistry, LanguageAdapter, ParsedFileGraph, PythonAdapter, RustAdapter, TypeScriptAdapter};
-pub use analysis::{BehavioralDiffEngine, BehavioralDiffReport, ExecutionPath, GraphAnalyzer, ImpactReport};
+pub use adapter::{
+    AdapterRegistry, LanguageAdapter, ParsedFileGraph, PythonAdapter, RustAdapter,
+    TypeScriptAdapter,
+};
+pub use analysis::{
+    BehavioralDiffEngine, BehavioralDiffReport, ExecutionPath, GraphAnalyzer, ImpactReport,
+};
+
+pub mod linker;
+pub use linker::link_project_calls;

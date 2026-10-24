@@ -1,7 +1,7 @@
+use super::{LanguageAdapter, PythonAdapter, RustAdapter, TypeScriptAdapter};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use super::{LanguageAdapter, PythonAdapter, RustAdapter, TypeScriptAdapter};
 
 pub struct AdapterRegistry {
     adapters: Vec<Arc<dyn LanguageAdapter>>,
@@ -31,7 +31,8 @@ impl AdapterRegistry {
 
     pub fn register(&mut self, adapter: Arc<dyn LanguageAdapter>) {
         for ext in adapter.supported_extensions() {
-            self.extension_map.insert(ext.to_string(), Arc::clone(&adapter));
+            self.extension_map
+                .insert(ext.to_string(), Arc::clone(&adapter));
         }
         self.adapters.push(adapter);
     }

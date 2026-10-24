@@ -1,8 +1,8 @@
-use std::io::{self, BufRead, Write};
+use crate::common::{current_project_id, open_or_init_store};
 use emocis_cclg::GraphAnalyzer;
 use emocis_memory::{ContextCompressor, DriftDetector, HealthScorer, MemoryEngine};
 use serde_json::{json, Value};
-use crate::common::open_or_init_store;
+use std::io::{self, BufRead, Write};
 
 pub fn run_mcp_server() -> anyhow::Result<()> {
     let stdin = io::stdin();
@@ -72,18 +72,18 @@ pub fn run_mcp_server() -> anyhow::Result<()> {
                         "tools": [
                             {
                                 "name": "emocis_search",
-                                "description": "Search codebase architectural decisions, constraints, warnings, and business rules.",
+                                "description": "Keyword search of codebase architectural decisions, constraints, warnings, and business rules.",
                                 "inputSchema": {
                                     "type": "object",
                                     "properties": {
-                                        "query": { "type": "string", "description": "Search keyword or natural language question" }
+                                        "query": { "type": "string", "description": "Search keywords" }
                                     },
                                     "required": ["query"]
                                 }
                             },
                             {
                                 "name": "emocis_get_context",
-                                "description": "Get compressed Minimal Context Package for a coding task/intent (saves 60%+ tokens).",
+                                "description": "Get a bounded, keyword-matched context package for a coding task. Token savings are not measured.",
                                 "inputSchema": {
                                     "type": "object",
                                     "properties": {
@@ -135,7 +135,7 @@ pub fn run_mcp_server() -> anyhow::Result<()> {
                             },
                             {
                                 "name": "emocis_health",
-                                "description": "Get codebase modularity, coupling, cohesion, and health scores.",
+                                "description": "Get measured static graph counts, resolution ratios, file fan-in/fan-out, and dependency cycles. Overall quality scores remain null until calibrated.",
                                 "inputSchema": {
                                     "type": "object",
                                     "properties": {}
@@ -150,19 +150,21 @@ pub fn run_mcp_server() -> anyhow::Result<()> {
                 let tool_name = params.get("name").and_then(|n| n.as_str()).unwrap_or("");
                 let args = params.get("arguments").cloned().unwrap_or(json!({}));
 
-                let tool_output = handle_tool_call(tool_name, &args);
-                json!({
-                    "jsonrpc": "2.0",
-                    "id": id,
-                    "result": {
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": tool_output
-                            }
-                        ]
-                    }
-                })
+                match handle_tool_call(tool_name, &args) {
+                    Ok(tool_output) => json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": { "content": [{ "type": "text", "text": tool_output }] }
+                    }),
+                    Err(error) => json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": {
+                            "content": [{ "type": "text", "text": error.to_string() }],
+                            "isError": true
+                        }
+                    }),
+                }
             }
             _ => {
                 json!({
@@ -180,95 +182,70 @@ pub fn run_mcp_server() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn handle_tool_call(name: &str, args: &Value) -> String {
-    let store = match open_or_init_store() {
-        Ok(s) => s,
-        Err(e) => return format!("Error accessing EMOCIS store: {}", e),
-    };
+fn handle_tool_call(name: &str, args: &Value) -> anyhow::Result<String> {
+    let store = open_or_init_store()?;
+    let project_id = current_project_id()?;
 
-    match name {
+    // Auto-index on first tool call if the project has not been mapped yet
+    if store.count_nodes(&project_id).unwrap_or(0) == 0 {
+        let _ = crate::common::index_directory_ext(std::path::Path::new("."), &project_id, false);
+    }
+
+    let output = match name {
         "emocis_search" => {
             let query = args.get("query").and_then(|q| q.as_str()).unwrap_or("");
             let engine = MemoryEngine::new(&store);
-            match engine.search(query) {
-                Ok(items) => {
-                    if items.is_empty() {
-                        format!("No knowledge items found matching '{}'", query)
-                    } else {
-                        serde_json::to_string_pretty(&items).unwrap_or_default()
-                    }
-                }
-                Err(e) => format!("Search error: {}", e),
-            }
+            serde_json::to_string_pretty(&engine.search_for_project(&project_id, query)?)?
         }
         "emocis_get_context" => {
             let intent = args.get("intent").and_then(|i| i.as_str()).unwrap_or("");
             let compressor = ContextCompressor::new(&store);
-            match compressor.build_context(intent) {
-                Ok(pkg) => pkg.formatted_markdown,
-                Err(e) => format!("Context compression error: {}", e),
-            }
+            compressor
+                .build_context_for_project(&project_id, intent)?
+                .formatted_markdown
         }
         "emocis_impact" => {
             let symbol = args.get("symbol").and_then(|s| s.as_str()).unwrap_or("");
             let analyzer = GraphAnalyzer::new(&store);
-            match analyzer.analyze_impact(symbol) {
-                Ok(report) => serde_json::to_string_pretty(&report).unwrap_or_default(),
-                Err(e) => format!("Impact analysis error: {}", e),
-            }
+            serde_json::to_string_pretty(&analyzer.analyze_impact(symbol)?)?
         }
         "emocis_calls" => {
             let function = args.get("function").and_then(|f| f.as_str()).unwrap_or("");
-            match store.find_nodes_by_name(function) {
-                Ok(candidates) => {
-                    if let Some(target) = candidates.first() {
-                        match store.get_callees(&target.id) {
-                            Ok(callees) => {
-                                let list: Vec<String> = callees.into_iter().map(|(_, n)| format!("{} ({:?})", n.name, n.kind)).collect();
-                                serde_json::to_string_pretty(&list).unwrap_or_default()
-                            }
-                            Err(e) => format!("Query error: {}", e),
-                        }
-                    } else {
-                        format!("Symbol '{}' not found in code graph", function)
-                    }
-                }
-                Err(e) => format!("Find error: {}", e),
-            }
+            let candidates = store.find_nodes_by_name(function)?;
+            let callees = if let Some(target) = candidates.first() {
+                store.get_callees(&target.id)?
+            } else {
+                Vec::new()
+            };
+            let list: Vec<String> = callees
+                .into_iter()
+                .map(|(_, n)| format!("{} ({:?})", n.name, n.kind))
+                .collect();
+            serde_json::to_string_pretty(&list)?
         }
         "emocis_callers" => {
             let function = args.get("function").and_then(|f| f.as_str()).unwrap_or("");
-            match store.find_nodes_by_name(function) {
-                Ok(candidates) => {
-                    if let Some(target) = candidates.first() {
-                        match store.get_callers(&target.id) {
-                            Ok(callers) => {
-                                let list: Vec<String> = callers.into_iter().map(|(_, n)| format!("{} ({:?})", n.name, n.kind)).collect();
-                                serde_json::to_string_pretty(&list).unwrap_or_default()
-                            }
-                            Err(e) => format!("Query error: {}", e),
-                        }
-                    } else {
-                        format!("Symbol '{}' not found in code graph", function)
-                    }
-                }
-                Err(e) => format!("Find error: {}", e),
-            }
+            let candidates = store.find_nodes_by_name(function)?;
+            let callers = if let Some(target) = candidates.first() {
+                store.get_callers(&target.id)?
+            } else {
+                Vec::new()
+            };
+            let list: Vec<String> = callers
+                .into_iter()
+                .map(|(_, n)| format!("{} ({:?})", n.name, n.kind))
+                .collect();
+            serde_json::to_string_pretty(&list)?
         }
         "emocis_audit" => {
             let detector = DriftDetector::new(&store);
-            match detector.run_audit("project") {
-                Ok(report) => serde_json::to_string_pretty(&report).unwrap_or_default(),
-                Err(e) => format!("Audit error: {}", e),
-            }
+            serde_json::to_string_pretty(&detector.run_audit(&project_id)?)?
         }
         "emocis_health" => {
             let scorer = HealthScorer::new(&store);
-            match scorer.compute_health("project") {
-                Ok(metrics) => serde_json::to_string_pretty(&metrics).unwrap_or_default(),
-                Err(e) => format!("Health error: {}", e),
-            }
+            serde_json::to_string_pretty(&scorer.compute_health(&project_id)?)?
         }
-        _ => format!("Unknown tool name: {}", name),
-    }
+        _ => anyhow::bail!("Unknown tool name: {}", name),
+    };
+    Ok(output)
 }

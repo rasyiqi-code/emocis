@@ -13,3 +13,5 @@ Cargo.lock
 .idea/
 .vscode/
 *.swp
+*.vsix
+node_modules/

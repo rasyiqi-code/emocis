@@ -139,4 +139,31 @@ fn test_sqlite_core_flow() {
 
     let search_res = store.search_knowledge("webhook").expect("Search knowledge failed");
     assert_eq!(search_res.len(), 1);
+
+    // Prefix search with FTS5
+    let prefix_res = store.search_knowledge("webh").expect("Prefix search failed");
+    assert_eq!(prefix_res.len(), 1);
+
+    // Insert a second knowledge item matching query in content only
+    let knowledge2 = KnowledgeItem {
+        id: IdentityGenerator::for_knowledge("decision", "002"),
+        project_id: "proj:emocis".to_string(),
+        knowledge_type: KnowledgeType::Warning,
+        title: "Database connection timeout handling".to_string(),
+        content: "Always configure retry timeouts before sending webhook calls.".to_string(),
+        status: KnowledgeStatus::Active,
+        confidence: 0.90,
+        evidence: vec![],
+        affects: vec![],
+        tags: vec!["db".to_string()],
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
+    store.insert_knowledge_item(&knowledge2).expect("Insert knowledge2 failed");
+
+    // BM25 ranking test: Title match should rank higher than content-only match
+    let search_both = store.search_knowledge("webhook").expect("Search both failed");
+    assert_eq!(search_both.len(), 2);
+    assert_eq!(search_both[0].id, knowledge.id, "Title match must rank higher than content-only match");
+    assert_eq!(search_both[1].id, knowledge2.id);
 }

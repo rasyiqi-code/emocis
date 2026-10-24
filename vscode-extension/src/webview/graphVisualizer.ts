@@ -320,10 +320,11 @@ export class GraphVisualizerPanel {
       panel.style.display = 'block';
       panelTitle.innerText = target;
       panelContent.innerHTML = \`
-        <div class="badge badge-target">Active Focus</div>
+        <div class="badge badge-target">Partial Static Graph</div>
+        <p>Only supported, indexed relationships are shown. Zero callers does not prove a symbol is unused.</p>
         <p><strong>Direct Callers:</strong> \${callers.length}</p>
         <p><strong>Direct Callees:</strong> \${calls.length}</p>
-        <p><strong>Impact Radius:</strong> \${impact ? (impact.direct_callers?.length + impact.indirect_callers?.length) : 'Clean'}</p>
+        <p><strong>Impact Radius:</strong> \${impact ? (impact.direct_callers?.length + impact.indirect_callers?.length) : 'Unavailable'}</p>
       \`;
     }
 

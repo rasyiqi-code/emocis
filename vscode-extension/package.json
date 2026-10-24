@@ -2,7 +2,7 @@
   "name": "emocis-vscode",
   "displayName": "EMOCIS — Codebase Intelligence & Engineering Memory",
   "description": "Interactive Logic Graph (CCLG), Architecture Drift Detection, and Engineering Memory System for VS Code & Cursor",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "publisher": "emocis",
   "repository": {
     "type": "git",
@@ -18,9 +18,7 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onStartupFinished",
-    "onView:emocis.memoryView",
-    "onView:emocis.healthView"
+    "onStartupFinished"
   ],
   "contributes": {
     "viewsContainers": {
@@ -37,11 +35,13 @@
         {
           "id": "emocis.memoryView",
           "name": "Engineering Memory (TOC)",
+          "icon": "media/sidebar-icon.svg",
           "visibility": "visible"
         },
         {
           "id": "emocis.healthView",
           "name": "Architecture Health & Drift",
+          "icon": "media/sidebar-icon.svg",
           "visibility": "visible"
         }
       ]
@@ -78,32 +78,123 @@
         "icon": "$(sparkle)"
       },
       {
+        "command": "emocis.copilotContextForSymbol",
+        "title": "EMOCIS: Copilot Context for Active Symbol",
+        "icon": "$(robot)"
+      },
+      {
+        "command": "emocis.setupAntigravityMcp",
+        "title": "EMOCIS: Setup Antigravity & Copilot MCP Config",
+        "icon": "$(gear)"
+      },
+      {
         "command": "emocis.audit",
         "title": "EMOCIS: Run Architecture Audit",
         "icon": "$(shield)"
+      },
+      {
+        "command": "emocis.sendIssueToChat",
+        "title": "EMOCIS: Send Issue to AI Copilot Chat",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "emocis.sendMetricToChat",
+        "title": "EMOCIS: Analyze Metric with AI Copilot",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "emocis.sendAllDriftToChat",
+        "title": "EMOCIS: Send All Drift Issues to AI Chat",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "emocis.sendFullAuditToChat",
+        "title": "EMOCIS: Send Full Health & Drift Audit to AI Chat",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "emocis.sendMemoryToChat",
+        "title": "EMOCIS: Send Memory Note to AI Chat",
+        "icon": "$(comment-discussion)"
       }
     ],
     "menus": {
       "view/title": [
         {
+          "command": "emocis.sendFullAuditToChat",
+          "when": "view == emocis.healthView",
+          "group": "navigation@1"
+        },
+        {
           "command": "emocis.refresh",
           "when": "view == emocis.memoryView || view == emocis.healthView",
-          "group": "navigation"
+          "group": "navigation@2"
         },
         {
           "command": "emocis.showGraph",
           "when": "view == emocis.memoryView",
-          "group": "navigation"
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "emocis.sendIssueToChat",
+          "when": "view == emocis.healthView && viewItem == healthIssue",
+          "group": "inline"
+        },
+        {
+          "command": "emocis.sendIssueToChat",
+          "when": "view == emocis.healthView && viewItem == healthIssue",
+          "group": "emocis@1"
+        },
+        {
+          "command": "emocis.openLocation",
+          "when": "view == emocis.healthView && viewItem == healthIssue",
+          "group": "emocis@2"
+        },
+        {
+          "command": "emocis.sendMetricToChat",
+          "when": "view == emocis.healthView && viewItem == healthMetric",
+          "group": "inline"
+        },
+        {
+          "command": "emocis.sendMetricToChat",
+          "when": "view == emocis.healthView && viewItem == healthMetric",
+          "group": "emocis@1"
+        },
+        {
+          "command": "emocis.sendAllDriftToChat",
+          "when": "view == emocis.healthView && viewItem == healthGroup",
+          "group": "inline"
+        },
+        {
+          "command": "emocis.sendAllDriftToChat",
+          "when": "view == emocis.healthView && viewItem == healthGroup",
+          "group": "emocis@1"
+        },
+        {
+          "command": "emocis.sendMemoryToChat",
+          "when": "view == emocis.memoryView && viewItem == memoryItem",
+          "group": "inline"
+        },
+        {
+          "command": "emocis.sendMemoryToChat",
+          "when": "view == emocis.memoryView && viewItem == memoryItem",
+          "group": "emocis@1"
         }
       ],
       "editor/context": [
         {
-          "command": "emocis.analyzeImpact",
+          "command": "emocis.copilotContextForSymbol",
           "group": "emocis@1"
         },
         {
-          "command": "emocis.showGraph",
+          "command": "emocis.analyzeImpact",
           "group": "emocis@2"
+        },
+        {
+          "command": "emocis.showGraph",
+          "group": "emocis@3"
         }
       ]
     },
@@ -126,11 +217,14 @@
   "scripts": {
     "build": "bun build ./src/extension.ts --target=node --format=cjs --outfile=./dist/extension.js --external vscode",
     "watch": "bun build ./src/extension.ts --target=node --format=cjs --outfile=./dist/extension.js --external vscode --watch",
-    "package": "vsce package"
+    "package": "bunx @vscode/vsce package",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit && tsc --project tests/tsconfig.json --noEmit"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.80.0",
+    "bun-types": "^1.4.4",
     "typescript": "^5.0.0"
   }
 }

@@ -41,6 +41,16 @@ export class MemoryCodeLensProvider implements vscode.CodeLensProvider {
           arguments: [symbolName],
         })
       );
+
+      // 3. AI Copilot Context CodeLens (Antigravity / Cursor / Copilot)
+      codeLenses.push(
+        new vscode.CodeLens(range, {
+          title: `🤖 Copilot Context`,
+          tooltip: `Copy bounded EMOCIS context for ${symbolName} to AI Copilot / Antigravity`,
+          command: "emocis.copilotContextForSymbol",
+          arguments: [symbolName],
+        })
+      );
     }
 
     return codeLenses;

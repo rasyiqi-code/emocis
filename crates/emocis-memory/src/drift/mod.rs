@@ -1,6 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use crate::health::GraphMeasurements;
 use emocis_core::SqliteStore;
+use emocis_core::{EdgeKind, NodeKind};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DriftSeverity {
@@ -41,8 +43,17 @@ impl<'a> DriftDetector<'a> {
 
         for item in items {
             for target_name in &item.affects {
-                let matched_nodes = self.store.find_nodes_by_name(target_name)?;
-                if matched_nodes.is_empty() && !target_name.ends_with(".ts") && !target_name.ends_with(".rs") && !target_name.ends_with(".md") {
+                let matched_nodes: Vec<_> = self
+                    .store
+                    .find_nodes_by_name(target_name)?
+                    .into_iter()
+                    .filter(|n| n.project_id == project_id)
+                    .collect();
+                if matched_nodes.is_empty()
+                    && !target_name.ends_with(".ts")
+                    && !target_name.ends_with(".rs")
+                    && !target_name.ends_with(".md")
+                {
                     violations.push(DriftViolation {
                         severity: DriftSeverity::Medium,
                         title: format!("Documentation Drift: Entitas '{}' tidak ditemukan", target_name),
@@ -60,82 +71,141 @@ impl<'a> DriftDetector<'a> {
         Ok(violations)
     }
 
-    /// Universal architecture drift detector:
-    /// 1. Circular dependencies between directories/modules (Universal: applies to any project)
-    /// 2. Utility / leaf layer inversion (Leaf files calling orchestrators)
-    pub fn detect_architecture_drift(&self, _project_id: &str) -> anyhow::Result<Vec<DriftViolation>> {
+    /// Detect file dependency cycles and unreferenced functions within this project.
+    pub fn detect_architecture_drift(
+        &self,
+        project_id: &str,
+    ) -> anyhow::Result<Vec<DriftViolation>> {
+        let graph = GraphMeasurements::compute(self.store, project_id)?;
+        self.detect_architecture_drift_with_graph(project_id, &graph)
+    }
+
+    fn detect_architecture_drift_with_graph(
+        &self,
+        project_id: &str,
+        graph: &GraphMeasurements,
+    ) -> anyhow::Result<Vec<DriftViolation>> {
         let mut violations = Vec::new();
-
-        // 1. Module-level Circular Dependency Detection
-        // Map edges between different top-level / sub directories
-        let mut dir_dependencies: HashMap<String, HashSet<String>> = HashMap::new();
-
-        let cross_calls = self.store.get_cross_file_calls()?;
-        for (file1, file2) in cross_calls {
-            let dir1 = get_module_dir(&file1);
-            let dir2 = get_module_dir(&file2);
-
-            if dir1 != dir2 && !dir1.is_empty() && !dir2.is_empty() {
-                dir_dependencies.entry(dir1.clone()).or_default().insert(dir2.clone());
-
-                // Check if reverse dependency exists: dir2 already calls dir1
-                if let Some(target_deps) = dir_dependencies.get(&dir2) {
-                    if target_deps.contains(&dir1) {
-                        violations.push(DriftViolation {
-                            severity: DriftSeverity::Critical,
-                            title: format!("Circular Dependency Terdeteksi: {} <───> {}", dir1, dir2),
-                            description: format!(
-                                "Modul '{}' memanggil '{}' dan sebaliknya modul '{}' memanggil '{}'. Keterikatan siklik ini merusak modularitas dan menyulitkan testing.",
-                                dir1, dir2, dir2, dir1
-                            ),
-                            location: Some(format!("Antara {} dan {}", file1, file2)),
-                            recommendation: "Pecah dependensi siklik dengan memindahkan interface atau tipe bersama ke modul terpisah (DIP / Dependency Inversion).".to_string(),
-                        });
-                    }
+        for component in graph.dependency_cycles.iter().cloned() {
+            violations.push(DriftViolation {
+                severity: DriftSeverity::Critical,
+                title: format!("Circular Dependency: {} files", component.len()),
+                description: format!("File-file ini saling terjangkau melalui panggilan pada graf statis: {}. Urutan daftar bukan urutan jalur eksekusi.", component.join(", ")),
+                location: Some(component.join(", ")),
+                recommendation: "Tinjau arah dependensi dan ekstrak kontrak bersama bila diperlukan.".to_string(),
+            });
+        }
+        let nodes = self.store.find_nodes_by_name("")?;
+        let file_nodes: std::collections::HashMap<_, _> = nodes
+            .iter()
+            .filter(|n| n.project_id == project_id && n.kind == NodeKind::File)
+            .filter_map(|n| n.source.as_ref().map(|source| (source.file.as_str(), n)))
+            .collect();
+        let project_nodes: HashSet<_> = nodes
+            .iter()
+            .filter(|n| n.project_id == project_id)
+            .map(|n| n.id.as_str())
+            .collect();
+        let incoming: HashSet<_> = self
+            .store
+            .get_all_edges()?
+            .into_iter()
+            .filter(|e| e.kind == EdgeKind::Calls && project_nodes.contains(e.from.as_str()))
+            .map(|e| e.to)
+            .collect();
+        for node in nodes.iter().filter(|n| {
+            n.project_id == project_id && n.kind == NodeKind::Function && !incoming.contains(&n.id)
+        }) {
+            let Some(source) = &node.source else {
+                continue;
+            };
+            let path = std::path::Path::new(&source.file);
+            if node.name == "main"
+                || node.name == "activate"
+                || node.name == "deactivate"
+                || node.name == "run_mcp_server"
+                || node.name.starts_with("test_")
+                || source.file.ends_with("_test.rs")
+                || source.file.ends_with("_tests.rs")
+                || source.file.contains(".test.")
+                || source.file.contains(".spec.")
+                || source.file.ends_with(".vue")
+                || source.file.ends_with(".svelte")
+                || node.metadata["is_test"] == true
+                || node.metadata["tauri_command"] == true
+                || path.components().any(|part| {
+                    matches!(
+                        part.as_os_str().to_str(),
+                        Some(
+                            "test"
+                                | "tests"
+                                | "spec"
+                                | "specs"
+                                | "examples"
+                                | "example"
+                                | "benches"
+                                | "fixtures"
+                                | "stores"
+                                | "store"
+                                | "composables"
+                                | "composable"
+                        )
+                    )
+                })
+            {
+                continue;
+            }
+            if node.language.as_deref() == Some("typescript")
+                && node.identity.qualified_name.contains('.')
+            {
+                continue;
+            }
+            if node.language.as_deref() == Some("rust") && node.metadata["public"] == true {
+                continue;
+            }
+            if node.language.as_deref() == Some("python") && !node.name.starts_with('_') {
+                continue;
+            }
+            if node.language.as_deref() == Some("typescript") {
+                let exported = file_nodes.get(source.file.as_str()).is_some_and(|file| {
+                    file.metadata["exports"].as_array().is_some_and(|exports| {
+                        exports
+                            .iter()
+                            .any(|binding| binding["local"].as_str() == Some(&node.name))
+                    })
+                });
+                if exported {
+                    continue;
                 }
             }
+            violations.push(DriftViolation {
+                severity: DriftSeverity::Low,
+                title: format!("Fungsi privat kandidat tanpa pemanggil terindeks: '{}'", node.name),
+                description: "Tidak ditemukan pemanggil untuk fungsi yang tampak privat pada graf parsial. Pola callback, refleksi, dan penggunaan dinamis masih dapat luput.".to_string(),
+                location: Some(format!("{}:{}", source.file, source.start_line)),
+                recommendation: "Verifikasi penggunaan sebelum menghapus kode.".to_string(),
+            });
         }
-
-        // 2. Dead Logic / Orphan Function Detection (PRD Section 34)
-        let uncalled = self.store.get_uncalled_functions(50)?;
-        for (fn_name, file_path, line) in uncalled {
-            // Non-main / non-index files with unreferenced functions
-            if !file_path.contains("main") && !file_path.contains("index") && !file_path.contains("test") {
-                violations.push(DriftViolation {
-                    severity: DriftSeverity::Low,
-                    title: format!("Possible Dead Logic: Fungsi '{}' tidak memiliki pemanggil", fn_name),
-                    description: format!(
-                        "Fungsi '{}' di '{}' tidak dipanggil oleh bagian manapun di dalam graf kode.",
-                        fn_name, file_path
-                    ),
-                    location: Some(format!("{}:{}", file_path, line)),
-                    recommendation: "Periksa apakah fungsi ini masih digunakan, merupakan API publik eksternal, atau kode mati yang aman dibersihkan.".to_string(),
-                });
-            }
-        }
-
         Ok(violations)
     }
 
     /// Run full audit
     pub fn run_audit(&self, project_id: &str) -> anyhow::Result<DriftReport> {
-        let mut all_violations = Vec::new();
-        all_violations.extend(self.detect_doc_drift(project_id)?);
-        all_violations.extend(self.detect_architecture_drift(project_id)?);
+        let graph = GraphMeasurements::compute(self.store, project_id)?;
+        self.run_audit_with_graph(project_id, &graph)
+    }
 
-        let total = all_violations.len();
+    pub(crate) fn run_audit_with_graph(
+        &self,
+        project_id: &str,
+        graph: &GraphMeasurements,
+    ) -> anyhow::Result<DriftReport> {
+        let mut all_violations = self.detect_doc_drift(project_id)?;
+        all_violations.extend(self.detect_architecture_drift_with_graph(project_id, graph)?);
+        let total_violations = all_violations.len();
         Ok(DriftReport {
-            total_violations: total,
+            total_violations,
             violations: all_violations,
         })
-    }
-}
-
-fn get_module_dir(file_path: &str) -> String {
-    let path = std::path::Path::new(file_path);
-    if let Some(parent) = path.parent() {
-        parent.to_str().unwrap_or("").to_string()
-    } else {
-        "".to_string()
     }
 }

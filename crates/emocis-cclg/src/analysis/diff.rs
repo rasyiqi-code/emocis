@@ -82,7 +82,10 @@ impl<'a> BehavioralDiffEngine<'a> {
                         caller_id: key.0.clone(),
                         callee_id: key.1.clone(),
                         edge_kind: target_edge.kind.clone(),
-                        detail: format!("Jalur pemanggilan baru terdeteksi: {} ──> {}", key.0, key.1),
+                        detail: format!(
+                            "Jalur pemanggilan baru terdeteksi: {} ──> {}",
+                            key.0, key.1
+                        ),
                     });
                 }
             }
@@ -110,8 +113,8 @@ impl<'a> BehavioralDiffEngine<'a> {
         })
     }
 
-    fn get_snapshot_edges(&self, _snapshot_id: &str) -> anyhow::Result<Vec<Edge>> {
-        let edges = self.store.get_all_edges()?;
+    fn get_snapshot_edges(&self, snapshot_id: &str) -> anyhow::Result<Vec<Edge>> {
+        let edges = self.store.get_edges_for_snapshot(snapshot_id)?;
         Ok(edges)
     }
 }

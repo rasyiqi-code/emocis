@@ -47,6 +47,7 @@ impl LanguageAdapter for PythonAdapter {
             .ok_or_else(|| anyhow!("Tree-sitter failed to parse Python file {}", file_path))?;
 
         let root_node = tree.root_node();
+        let content_bytes = content.as_bytes();
         let mut nodes = Vec::new();
         let mut edges = Vec::new();
 
@@ -71,12 +72,14 @@ impl LanguageAdapter for PythonAdapter {
             },
             state: NodeState::default(),
             provenance: Provenance::default(),
-            metadata: serde_json::Value::Null,
+            metadata: serde_json::json!({
+                "imports": collect_python_imports(root_node, content_bytes),
+                "exports": collect_python_exports(root_node, content_bytes),
+            }),
         };
         nodes.push(file_node);
 
         // 2. Walk AST recursively
-        let content_bytes = content.as_bytes();
         let mut call_counter: u32 = 0;
         walk_python_tree(
             &root_node,
@@ -123,12 +126,8 @@ fn walk_python_tree(
                         NodeKind::Function
                     };
 
-                    let fn_id = IdentityGenerator::for_symbol(
-                        "python",
-                        file_path,
-                        &qualified,
-                        &fn_kind,
-                    );
+                    let fn_id =
+                        IdentityGenerator::for_symbol("python", file_path, &qualified, &fn_kind);
 
                     let node = Node {
                         id: fn_id.clone(),
@@ -208,7 +207,8 @@ fn walk_python_tree(
                 if let Ok(callee_text) = function_node.utf8_text(code) {
                     *call_counter += 1;
                     let caller_id = current_enclosing_id.unwrap_or(file_node_id);
-                    let callsite_id = IdentityGenerator::for_callsite(caller_id, callee_text, *call_counter);
+                    let callsite_id =
+                        IdentityGenerator::for_callsite(caller_id, callee_text, *call_counter);
 
                     let callsite_node = Node {
                         id: callsite_id.clone(),
@@ -299,3 +299,114 @@ fn node_source_loc(node: &TsNode, file: &str) -> SourceLocation {
         end_column: end.column as u32 + 1,
     }
 }
+
+fn collect_python_imports(root: TsNode, code: &[u8]) -> Vec<serde_json::Value> {
+    let mut imports = Vec::new();
+    let mut cursor = root.walk();
+    for statement in root.named_children(&mut cursor) {
+        match statement.kind() {
+            "import_from_statement" => {
+                let module = statement
+                    .child_by_field_name("module_name")
+                    .and_then(|m| m.utf8_text(code).ok())
+                    .unwrap_or("");
+                let mut c = statement.walk();
+                for child in statement.children(&mut c) {
+                    match child.kind() {
+                        "dotted_name" => {
+                            // Only collect names after the 'import' keyword (not the module_name)
+                            if child != statement.child_by_field_name("module_name").unwrap_or(child) {
+                                let name = child.utf8_text(code).unwrap_or("");
+                                imports.push(serde_json::json!({
+                                    "module": module,
+                                    "imported": name,
+                                    "local": name,
+                                }));
+                            }
+                        }
+                        "aliased_import" => {
+                            let imp = child
+                                .child_by_field_name("name")
+                                .and_then(|n| n.utf8_text(code).ok())
+                                .unwrap_or("");
+                            let local = child
+                                .child_by_field_name("alias")
+                                .and_then(|a| a.utf8_text(code).ok())
+                                .unwrap_or(imp);
+                            imports.push(serde_json::json!({
+                                "module": module,
+                                "imported": imp,
+                                "local": local,
+                            }));
+                        }
+                        "wildcard_import" => {
+                            imports.push(serde_json::json!({
+                                "module": module,
+                                "imported": "*",
+                                "local": "*",
+                            }));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            "import_statement" => {
+                let mut c = statement.walk();
+                for child in statement.children(&mut c) {
+                    match child.kind() {
+                        "dotted_name" => {
+                            let name = child.utf8_text(code).unwrap_or("");
+                            imports.push(serde_json::json!({
+                                "module": name,
+                                "imported": "*",
+                                "local": name,
+                            }));
+                        }
+                        "aliased_import" => {
+                            let module = child
+                                .child_by_field_name("name")
+                                .and_then(|n| n.utf8_text(code).ok())
+                                .unwrap_or("");
+                            let local = child
+                                .child_by_field_name("alias")
+                                .and_then(|a| a.utf8_text(code).ok())
+                                .unwrap_or(module);
+                            imports.push(serde_json::json!({
+                                "module": module,
+                                "imported": "*",
+                                "local": local,
+                            }));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    imports
+}
+
+fn collect_python_exports(root: TsNode, code: &[u8]) -> Vec<serde_json::Value> {
+    let mut exports = Vec::new();
+    let mut cursor = root.walk();
+    for statement in root.named_children(&mut cursor) {
+        match statement.kind() {
+            "function_definition" | "class_definition" => {
+                if let Some(name_node) = statement.child_by_field_name("name") {
+                    if let Ok(name) = name_node.utf8_text(code) {
+                        if !name.starts_with('_') {
+                            exports.push(serde_json::json!({
+                                "local": name,
+                                "exported": name,
+                            }));
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    exports
+}
+

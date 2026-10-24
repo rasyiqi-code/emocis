@@ -1,17 +1,21 @@
-use std::collections::{HashMap, HashSet};
+mod complexity;
 use emocis_core::{NodeKind, SqliteStore};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefactorDiagnosis {
     pub file_path: String,
     pub loc: usize,
+    pub non_blank_lines: usize,
     pub function_count: usize,
     pub distinct_conceptual_clusters: usize,
     pub top_concept_clusters: Vec<String>,
     pub incoming_dependents_count: usize,
     pub outgoing_calls_count: usize,
-    pub cyclomatic_complexity_est: usize,
+    pub cyclomatic_complexity_est: Option<usize>,
+    pub complexity_method: String,
+    pub complexity_target: Option<String>,
     pub severity: String, // "CRITICAL", "HIGH", "MEDIUM", "HEALTHY"
     pub recommendation: String,
 }
@@ -26,12 +30,17 @@ impl<'a> RefactoringRadar<'a> {
     }
 
     /// Fully dynamic diagnosis applicable to ANY codebase (game engines, compilers, web, ML, etc.)
-    pub fn diagnose_file(&self, file_path: &str, content: &str) -> anyhow::Result<RefactorDiagnosis> {
+    pub fn diagnose_file(
+        &self,
+        file_path: &str,
+        content: &str,
+    ) -> anyhow::Result<RefactorDiagnosis> {
         let lines: Vec<&str> = content.lines().collect();
         let loc = lines.len();
+        let non_blank_lines = lines.iter().filter(|line| !line.trim().is_empty()).count();
 
         // 1. Dynamic AST token extraction from declared symbols
-        let nodes = self.store.find_nodes_by_name(file_path)?;
+        let nodes = self.store.find_nodes_by_file(file_path)?;
         let mut functions_in_file = Vec::new();
         let mut incoming_dependents = HashSet::new();
         let mut outgoing_calls = HashSet::new();
@@ -41,23 +50,19 @@ impl<'a> RefactoringRadar<'a> {
                 functions_in_file.push(node.name.clone());
             }
 
-            if let Ok(callers) = self.store.get_callers(&node.id) {
-                for (_, caller) in callers {
-                    if caller.source.as_ref().map(|s| s.file.as_str()) != Some(file_path) {
-                        incoming_dependents.insert(caller.id);
-                    }
+            for (_, caller) in self.store.get_callers(&node.id)? {
+                if caller.source.as_ref().map(|s| s.file.as_str()) != Some(file_path) {
+                    incoming_dependents.insert(caller.id);
                 }
             }
-            if let Ok(callees) = self.store.get_callees(&node.id) {
-                for (_, callee) in callees {
-                    if callee.source.as_ref().map(|s| s.file.as_str()) != Some(file_path) {
-                        outgoing_calls.insert(callee.id);
-                    }
+            for (_, callee) in self.store.get_callees(&node.id)? {
+                if callee.source.as_ref().map(|s| s.file.as_str()) != Some(file_path) {
+                    outgoing_calls.insert(callee.id);
                 }
             }
         }
 
-        // 2. Dynamic Word-Boundary Tokenizer (CamelCase, snake_case, kebab-case)
+        // 2. Identifier vocabulary (a lexical signal, not a measure of responsibility).
         let mut word_frequencies: HashMap<String, usize> = HashMap::new();
         for fn_name in &functions_in_file {
             let tokens = tokenize_identifier(fn_name);
@@ -70,15 +75,15 @@ impl<'a> RefactoringRadar<'a> {
 
         // Filter out generic programming keywords
         let generic_stops = [
-            "get", "set", "handle", "process", "run", "do", "make", "create",
-            "update", "delete", "build", "init", "check", "on", "is", "has", "to",
+            "get", "set", "handle", "process", "run", "do", "make", "create", "update", "delete",
+            "build", "init", "check", "on", "is", "has", "to",
         ];
         let mut clusters: Vec<(String, usize)> = word_frequencies
             .into_iter()
             .filter(|(w, _)| !generic_stops.contains(&w.as_str()))
             .collect();
 
-        clusters.sort_by(|a, b| b.1.cmp(&a.1));
+        clusters.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
         let top_concept_clusters: Vec<String> = clusters
             .iter()
@@ -88,90 +93,95 @@ impl<'a> RefactoringRadar<'a> {
 
         let distinct_clusters = clusters.len();
 
-        // 3. Dynamic Cyclomatic Complexity Estimation (Branch counting)
-        let mut cyclomatic_branches = 1;
-        for line in &lines {
-            let trimmed = line.trim();
-            if trimmed.starts_with("if ") || trimmed.starts_with("if(")
-                || trimmed.starts_with("for ") || trimmed.starts_with("for(")
-                || trimmed.starts_with("while ") || trimmed.starts_with("while(")
-                || trimmed.starts_with("match ") || trimmed.starts_with("switch ")
-                || trimmed.starts_with("catch ") || trimmed.starts_with("catch(")
-            {
-                cyclomatic_branches += 1;
-            }
-        }
+        // AST complexity is measured within each function, excluding nested function bodies.
+        let complexity = complexity::max_function_complexity(file_path, content);
 
         let incoming_count = incoming_dependents.len();
         let outgoing_count = outgoing_calls.len();
         let function_count = functions_in_file.len();
 
         // 4. Dynamic Severity Assessment
-        let (severity, recommendation) = if loc > 1200 || (function_count > 25 && distinct_clusters >= 6) {
-            let cluster_names: Vec<String> = clusters.iter().take(3).map(|(w, _)| capitalize(w)).collect();
-            let suggestion = if cluster_names.is_empty() {
-                "Pecah file ke beberapa sub-modul berdasarkan domain".to_string()
-            } else {
-                format!("Pisahkan modul ini menjadi: {}Handler / {}Service", cluster_names.join(", "), cluster_names.join(", "))
-            };
-
+        let (severity, recommendation) = if non_blank_lines > 1200
+            || (function_count > 25 && distinct_clusters >= 6)
+        {
             (
-                "CRITICAL".to_string(),
+                "SIZE REVIEW".to_string(),
                 format!(
-                    "File Bloat terdeteksi ({} LOC, {} fungsi, {} klaster konsep berbeda). {}",
-                    loc, function_count, distinct_clusters, suggestion
+                    "File memiliki {} baris nonkosong dan {} fungsi terindeks. Ini sinyal ukuran untuk ditinjau; analisis kohesi belum tersedia.",
+                    non_blank_lines, function_count
                 ),
             )
-        } else if loc > 500 || (function_count > 15 && distinct_clusters >= 4) {
+        } else if non_blank_lines > 500 || (function_count > 15 && distinct_clusters >= 4) {
             (
-                "HIGH".to_string(),
+                "SIZE REVIEW".to_string(),
                 format!(
-                    "Modul mulai menampung akumulasi tanggung jawab ganda ({} fungsi). Pertimbangkan memisahkan fungsi pendukung.",
-                    function_count
+                    "File memiliki {} baris nonkosong dan {} fungsi terindeks. Tinjau secara manual apakah modul perlu dipecah.",
+                    non_blank_lines, function_count
                 ),
             )
-        } else if cyclomatic_branches > 30 {
+        } else if complexity.value.is_some_and(|value| value > 10) {
             (
-                "MEDIUM".to_string(),
+                "COMPLEXITY REVIEW".to_string(),
                 format!(
-                    "Kompleksitas percabangan tinggi ({} cabang logika). Pertimbangkan ekstraksi fungsi kecil.",
-                    cyclomatic_branches
+                    "Kompleksitas fungsi tertinggi terukur {} pada {}. Periksa jalur kondisional dan kasus uji sebelum refactor.",
+                    complexity.value.unwrap_or_default(), complexity.function.as_deref().unwrap_or("fungsi tanpa nama")
                 ),
             )
         } else {
             (
-                "HEALTHY".to_string(),
-                "Struktur ukuran file, jumlah fungsi, dan kohesi tanggung jawab berada dalam batas wajar.".to_string(),
+                "NO SIZE FLAG".to_string(),
+                "Heuristik ukuran tidak melewati ambang tinjau; hasil ini tidak menilai kohesi atau kualitas desain.".to_string(),
             )
         };
 
         Ok(RefactorDiagnosis {
             file_path: file_path.to_string(),
             loc,
+            non_blank_lines,
             function_count,
             distinct_conceptual_clusters: distinct_clusters,
             top_concept_clusters,
             incoming_dependents_count: incoming_count,
             outgoing_calls_count: outgoing_count,
-            cyclomatic_complexity_est: cyclomatic_branches,
+            cyclomatic_complexity_est: complexity.value,
+            complexity_method: complexity.method.to_owned(),
+            complexity_target: complexity.function,
             severity,
             recommendation,
         })
     }
 
-    /// Dynamic repository-wide bloat candidate scanner
+    /// Compatibility API for callers that intentionally scan all projects in this store.
     pub fn scan_bloat_candidates(&self) -> anyhow::Result<Vec<RefactorDiagnosis>> {
-        let all_nodes = self.store.find_nodes_by_name("")?;
+        self.scan_bloat_candidates_inner(None)
+    }
+
+    /// Scan only one indexed project and report file read/analysis failures.
+    pub fn scan_bloat_candidates_for_project(
+        &self,
+        project_id: &str,
+    ) -> anyhow::Result<Vec<RefactorDiagnosis>> {
+        self.scan_bloat_candidates_inner(Some(project_id))
+    }
+
+    fn scan_bloat_candidates_inner(
+        &self,
+        project_id: Option<&str>,
+    ) -> anyhow::Result<Vec<RefactorDiagnosis>> {
+        let all_nodes: Vec<_> = self
+            .store
+            .find_nodes_by_name("")?
+            .into_iter()
+            .filter(|n| project_id.is_none_or(|project| n.project_id == project))
+            .collect();
         let mut files_checked = HashMap::new();
 
         for node in all_nodes {
             if node.kind == NodeKind::File {
                 if let Some(src) = node.source {
-                    if let Ok(content) = std::fs::read_to_string(&src.file) {
-                        if let Ok(diag) = self.diagnose_file(&src.file, &content) {
-                            files_checked.insert(src.file, diag);
-                        }
-                    }
+                    let content = std::fs::read_to_string(&src.file)?;
+                    let diag = self.diagnose_file(&src.file, &content)?;
+                    files_checked.insert(src.file, diag);
                 }
             }
         }
@@ -218,3 +228,4 @@ fn capitalize(s: &str) -> String {
         Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
     }
 }
+
